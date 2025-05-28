@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Line, LineChart, XAxis, YAxis, ResponsiveContainer, Bar, BarChart, PieChart, Pie, Cell } from "recharts"
 import { Brain, TrendingUp, TrendingDown, AlertTriangle, Target, Zap } from "lucide-react"
+import Link from "next/link"
 
 const demandForecastData = [
   { month: "Jan", actual: 120, predicted: 115 },
@@ -60,7 +61,9 @@ export default function AnalyticsPage() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+                <BreadcrumbLink asChild>
+                  <Link href="/">Dashboard</Link>
+                </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>

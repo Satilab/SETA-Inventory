@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calculator, FileText, Download, Eye, DollarSign, TrendingUp, CreditCard, Receipt } from "lucide-react"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { XAxis, YAxis, ResponsiveContainer, Bar, BarChart } from "recharts"
+import Link from "next/link"
 
 const mockInvoices = [
   {
@@ -124,7 +125,9 @@ export default function FinancePage() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+                <BreadcrumbLink asChild>
+                  <Link href="/">Dashboard</Link>
+                </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>

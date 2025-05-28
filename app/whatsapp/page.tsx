@@ -1,9 +1,10 @@
 "use client"
 
+import { Badge } from "@/components/ui/badge"
+
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -16,8 +17,30 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { MessageSquare, Send, Phone, User, CheckCircle, Package, FileText, Download } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import {
+  MessageSquare,
+  Send,
+  Phone,
+  User,
+  CheckCircle,
+  Package,
+  FileText,
+  Download,
+  FileCheck,
+  Plus,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import Link from "next/link"
 
 const mockChats = [
   {
@@ -68,45 +91,86 @@ const mockMessages = [
   {
     id: 3,
     sender: "customer",
-    message: "Yes, please create the order. My GSTIN is 36ABCDE1234F1Z5",
+    message: "Can you send me a formal quotation first? I need to get approval.",
     timestamp: "10:35 AM",
     type: "text",
   },
   {
     id: 4,
     sender: "business",
-    message: "Order created successfully! Order ID: ORD-2024-001. I'll send you the invoice shortly.",
+    message: "Sure, I'll prepare a quotation for you right away. Anything else you'd like to include?",
     timestamp: "10:36 AM",
-    type: "order",
+    type: "text",
   },
   {
     id: 5,
-    sender: "business",
-    message: "Invoice-ORD-2024-001.pdf",
+    sender: "customer",
+    message: "Also add 10 LED panels if you have them in stock.",
     timestamp: "10:37 AM",
-    type: "document",
+    type: "text",
   },
 ]
 
 export default function WhatsAppPage() {
   const [selectedChat, setSelectedChat] = useState(mockChats[0])
   const [newMessage, setNewMessage] = useState("")
+  const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false)
+  const [messages, setMessages] = useState(mockMessages)
   const { toast } = useToast()
 
   const handleSendMessage = () => {
     if (newMessage.trim()) {
+      const message = {
+        id: messages.length + 1,
+        sender: "business" as const,
+        message: newMessage,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        type: "text" as const,
+      }
+
+      setMessages([...messages, message])
+      setNewMessage("")
+
       toast({
         title: "Message Sent",
         description: "Your message has been sent to the customer",
       })
-      setNewMessage("")
     }
   }
 
   const handleCreateOrder = () => {
     toast({
       title: "Order Created",
-      description: "Order has been automatically created in Salesforce",
+      description: "Order has been automatically created and synced to CRM",
+    })
+  }
+
+  const handleCreateQuotation = () => {
+    toast({
+      title: "Quotation Created",
+      description: "Quotation has been created and sent to the customer",
+    })
+    setIsQuoteDialogOpen(false)
+  }
+
+  const handleProcessAllOrders = () => {
+    toast({
+      title: "Processing Orders",
+      description: "All pending WhatsApp orders are being processed",
+    })
+  }
+
+  const handleViewInvoices = () => {
+    toast({
+      title: "Opening Invoices",
+      description: "Redirecting to finance section for invoice management",
+    })
+  }
+
+  const handleSyncNow = () => {
+    toast({
+      title: "Syncing Data",
+      description: "Syncing all customer interactions to Salesforce CRM",
     })
   }
 
@@ -128,7 +192,9 @@ export default function WhatsAppPage() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+                <BreadcrumbLink asChild>
+                  <Link href="/">Dashboard</Link>
+                </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
@@ -207,12 +273,20 @@ export default function WhatsAppPage() {
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toast({ title: "Calling", description: `Calling ${selectedChat.customerName}` })}
+                  >
                     <Phone className="h-4 w-4" />
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleCreateOrder}>
                     <Package className="h-4 w-4" />
                     Create Order
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setIsQuoteDialogOpen(true)}>
+                    <FileCheck className="h-4 w-4" />
+                    Create Quote
                   </Button>
                 </div>
               </div>
@@ -221,7 +295,7 @@ export default function WhatsAppPage() {
               {/* Messages */}
               <ScrollArea className="flex-1 pr-4">
                 <div className="space-y-4">
-                  {mockMessages.map((message) => (
+                  {messages.map((message) => (
                     <div
                       key={message.id}
                       className={`flex ${message.sender === "business" ? "justify-end" : "justify-start"}`}
@@ -277,11 +351,9 @@ export default function WhatsAppPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+          {/* Quick Actions */}
+          <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardHeader>
               <CardTitle>Pending Orders</CardTitle>
               <CardDescription>WhatsApp orders awaiting processing</CardDescription>
@@ -289,13 +361,13 @@ export default function WhatsAppPage() {
             <CardContent>
               <div className="text-2xl font-bold">5</div>
               <p className="text-xs text-muted-foreground">Need immediate attention</p>
-              <Button className="w-full mt-3" variant="outline">
+              <Button className="w-full mt-3" variant="outline" onClick={handleProcessAllOrders}>
                 Process All Orders
               </Button>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardHeader>
               <CardTitle>Auto-Generated Invoices</CardTitle>
               <CardDescription>Invoices created from WhatsApp orders</CardDescription>
@@ -303,13 +375,27 @@ export default function WhatsAppPage() {
             <CardContent>
               <div className="text-2xl font-bold">12</div>
               <p className="text-xs text-muted-foreground">This week</p>
-              <Button className="w-full mt-3" variant="outline">
-                View Invoices
+              <Button className="w-full mt-3" variant="outline" asChild onClick={handleViewInvoices}>
+                <Link href="/finance">View Invoices</Link>
               </Button>
             </CardContent>
           </Card>
 
           <Card>
+            <CardHeader>
+              <CardTitle>Pending Quotations</CardTitle>
+              <CardDescription>Quotations awaiting customer approval</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">8</div>
+              <p className="text-xs text-muted-foreground">Follow up required</p>
+              <Button className="w-full mt-3" variant="outline" asChild>
+                <Link href="/quotations">View Quotations</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardHeader>
               <CardTitle>Customer Interactions</CardTitle>
               <CardDescription>Total interactions synced to CRM</CardDescription>
@@ -317,13 +403,90 @@ export default function WhatsAppPage() {
             <CardContent>
               <div className="text-2xl font-bold">247</div>
               <p className="text-xs text-muted-foreground">Synced to Salesforce</p>
-              <Button className="w-full mt-3" variant="outline">
+              <Button className="w-full mt-3" variant="outline" onClick={handleSyncNow}>
                 Sync Now
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Quote Dialog */}
+      <Dialog open={isQuoteDialogOpen} onOpenChange={setIsQuoteDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Create Quotation from Chat</DialogTitle>
+            <DialogDescription>Generate a quotation based on this conversation.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="customer" className="text-right">
+                Customer
+              </Label>
+              <Input id="customer" value={selectedChat.customerName} readOnly className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="valid-until" className="text-right">
+                Valid Until
+              </Label>
+              <Input id="valid-until" type="date" className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Items</Label>
+              <div className="col-span-3 space-y-2">
+                <div className="flex items-center gap-2 p-2 border rounded-md">
+                  <div className="flex-1">
+                    <p className="font-medium">MCB 32A Single Pole</p>
+                    <p className="text-sm text-muted-foreground">₹520 x 50 units</p>
+                  </div>
+                  <p className="font-medium">₹26,000</p>
+                </div>
+                <div className="flex items-center gap-2 p-2 border rounded-md">
+                  <div className="flex-1">
+                    <p className="font-medium">LED Panel Light 40W</p>
+                    <p className="text-sm text-muted-foreground">₹1,450 x 10 units</p>
+                  </div>
+                  <p className="font-medium">₹14,500</p>
+                </div>
+                <Button variant="outline" size="sm" className="w-full">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Item
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="notes" className="text-right">
+                Notes
+              </Label>
+              <Input id="notes" placeholder="Additional notes" className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <div className="col-span-4 flex justify-end space-x-2">
+                <div className="text-sm">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span className="font-medium">₹40,500</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>GST (18%):</span>
+                    <span className="font-medium">₹7,290</span>
+                  </div>
+                  <div className="flex justify-between font-bold mt-1">
+                    <span>Total:</span>
+                    <span>₹47,790</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQuoteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateQuotation}>Create & Send Quotation</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarInset>
   )
 }

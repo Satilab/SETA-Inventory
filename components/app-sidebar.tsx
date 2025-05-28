@@ -1,6 +1,7 @@
 "use client"
 
 import type * as React from "react"
+import Link from "next/link"
 import {
   Package,
   Users,
@@ -12,6 +13,7 @@ import {
   Scan,
   AlertTriangle,
   TrendingUp,
+  FileCheck,
 } from "lucide-react"
 
 import {
@@ -65,6 +67,11 @@ const data = {
       icon: MessageSquare,
     },
     {
+      title: "Quotations",
+      url: "/quotations",
+      icon: FileCheck,
+    },
+    {
       title: "AI Analytics",
       url: "/analytics",
       icon: Brain,
@@ -112,10 +119,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         {item.items.map((subItem) => (
                           <SidebarMenuItem key={subItem.title}>
                             <SidebarMenuButton asChild>
-                              <a href={subItem.url}>
+                              <Link href={subItem.url}>
                                 <subItem.icon />
                                 <span>{subItem.title}</span>
-                              </a>
+                              </Link>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
                         ))}
@@ -123,10 +130,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     </div>
                   ) : (
                     <SidebarMenuButton asChild>
-                      <a href={item.url}>
+                      <Link href={item.url}>
                         <item.icon />
                         <span>{item.title}</span>
-                      </a>
+                      </Link>
                     </SidebarMenuButton>
                   )}
                 </SidebarMenuItem>
