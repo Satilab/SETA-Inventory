@@ -1,308 +1,213 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Edit, Trash2, Package, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
+import { Package, AlertTriangle, RefreshCw, Filter, Plus, Database } from "lucide-react"
+import { useInventoryManagement } from "@/hooks/use-inventory-management"
 import { useToast } from "@/hooks/use-toast"
-import { useProducts } from "@/hooks/use-demo-data"
-import { getCategoryNames } from "@/lib/product-categories"
 import { DynamicProductForm } from "@/components/dynamic-product-form"
-import Link from "next/link"
+import { getCategoryNames, getCategoryByName } from "@/lib/product-categories"
 
 export default function InventoryPage() {
+  const { data: inventory, loading, refetch, isDemoMode } = useInventoryManagement()
   const [searchTerm, setSearchTerm] = useState("")
+  const [selectedPhase, setSelectedPhase] = useState("All")
+  const [selectedStage, setSelectedStage] = useState("All")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState("")
-  const [formData, setFormData] = useState<Record<string, any>>({})
-  const [creating, setCreating] = useState(false)
-  const [salesforceStatus, setSalesforceStatus] = useState<"unknown" | "connected" | "demo">("unknown")
-
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
-  const { data: products, loading, error, refetch } = useProducts()
 
-  const filteredProducts = products.filter(
-    (product) =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Category-based form state
+  const [selectedCategory, setSelectedCategory] = useState("")
+  const [categoryFormData, setCategoryFormData] = useState<Record<string, any>>({})
+
+  const filteredInventory = inventory.filter((item) => {
+    const matchesSearch =
+      item.Productname__c?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.Model__c?.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesPhase = selectedPhase === "All" || item.Phase__c === selectedPhase
+    const matchesStage = selectedStage === "All" || (item.stage__c?.toString() || "0") === selectedStage
+
+    return matchesSearch && matchesPhase && matchesStage
+  })
+
+  const phases = ["All", ...Array.from(new Set(inventory.map((item) => item.Phase__c).filter(Boolean)))]
+  const stages = [
+    "All",
+    ...Array.from(new Set(inventory.map((item) => item.stage__c?.toString() || "0").filter(Boolean))),
+  ]
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount)
+  }
 
   const handleCategoryChange = (category: string) => {
     setSelectedCategory(category)
-    setFormData({}) // Reset form data when category changes
+    setCategoryFormData({}) // Reset form data when category changes
   }
 
   const validateForm = () => {
-    if (!selectedCategory) {
-      toast({
-        title: "Validation Error",
-        description: "Please select a category",
-        variant: "destructive",
-      })
-      return false
-    }
+    if (!selectedCategory) return false
 
-    if (!formData.productName || !formData.model) {
-      toast({
-        title: "Validation Error",
-        description: "Product name and model are required",
-        variant: "destructive",
-      })
-      return false
-    }
+    const categoryConfig = getCategoryByName(selectedCategory)
+    if (!categoryConfig) return false
 
-    if (!formData.price || !formData.quantity) {
-      toast({
-        title: "Validation Error",
-        description: "Price and quantity are required",
-        variant: "destructive",
-      })
-      return false
+    // Check all required fields
+    for (const field of categoryConfig.fields) {
+      if (field.required && !categoryFormData[field.name]) {
+        return false
+      }
     }
-
     return true
   }
 
   const handleAddProduct = async () => {
-    if (!validateForm()) return
-
-    setCreating(true)
     try {
-      // Call Salesforce API
-      const response = await fetch("/api/salesforce/create-product", {
+      setIsSubmitting(true)
+
+      if (!validateForm()) {
+        toast({
+          title: "Validation Error",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const categoryConfig = getCategoryByName(selectedCategory)
+      if (!categoryConfig) {
+        throw new Error("Invalid category selected")
+      }
+
+      // Map form data to Salesforce fields
+      const salesforceData: Record<string, any> = {}
+
+      categoryConfig.fields.forEach((field) => {
+        const value = categoryFormData[field.name]
+        if (value !== undefined && value !== "") {
+          const salesforceField = field.salesforceField || field.name
+
+          // Convert to appropriate type
+          if (field.type === "number") {
+            salesforceData[salesforceField] = Number(value)
+          } else {
+            salesforceData[salesforceField] = String(value)
+          }
+        }
+      })
+
+      console.log("Sending product data:", {
+        category: selectedCategory,
+        salesforceData,
+        originalFormData: categoryFormData,
+      })
+
+      // Always use VENKATA_RAMANA_MOTORS__c as the Salesforce object
+      const response = await fetch("/api/salesforce/create-inventory", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          productData: formData,
+          productData: salesforceData,
           category: selectedCategory,
+          salesforceObject: "VENKATA_RAMANA_MOTORS__c", // Always use this object
         }),
       })
 
-      // Handle non-JSON responses
-      const contentType = response.headers.get("content-type")
-      let result
-
-      if (contentType && contentType.includes("application/json")) {
-        result = await response.json()
-      } else {
-        const textResponse = await response.text()
-        console.error("Non-JSON response:", textResponse)
-
-        // Fallback to demo mode
-        result = {
-          id: `demo-${Date.now()}`,
-          success: true,
-          usingDemoMode: true,
-          message: "Product created in demo mode (server error)",
-          error: textResponse,
-        }
-      }
-
-      if (result.success) {
-        setSalesforceStatus(result.usingDemoMode ? "demo" : "connected")
-
-        // Determine the appropriate message based on the result
-        let toastMessage = result.message
-        let toastVariant: "default" | "destructive" = "default"
-
-        if (result.usingDemoMode) {
-          if (result.salesforceError?.includes("PUBLIC_URL_REQUIRED")) {
-            toastMessage = "Demo mode: Deploy to public URL to enable Salesforce"
-            toastVariant = "default"
-          } else if (result.salesforceError?.includes("INVALID_CREDENTIALS")) {
-            toastMessage = "Demo mode: Check Salesforce credentials"
-            toastVariant = "default"
-          } else {
-            toastMessage = result.message || "Product added to demo data"
-            toastVariant = "default"
-          }
-        }
-
-        toast({
-          title: result.usingDemoMode ? "Product Added (Demo Mode)" : "Product Added Successfully",
-          description: toastMessage,
-          variant: toastVariant,
-        })
-
-        // Show additional info if there were Salesforce errors
-        if (result.salesforceError && !result.salesforceError.includes("PUBLIC_URL_REQUIRED")) {
-          console.warn("Salesforce error (using demo mode):", result.salesforceError)
-        }
-
-        // Reset form
-        setIsAddDialogOpen(false)
-        setSelectedCategory("")
-        setFormData({})
-        refetch()
-      } else {
-        throw new Error(result.error || "Failed to create product")
-      }
-    } catch (error) {
-      console.error("Error creating product:", error)
-
-      // Even on error, we can still add to demo data
-      setSalesforceStatus("demo")
-
-      toast({
-        title: "Product Added (Demo Mode)",
-        description: "Product added to demo data due to connection issues",
-      })
-
-      // Reset form anyway
-      setIsAddDialogOpen(false)
-      setSelectedCategory("")
-      setFormData({})
-      refetch()
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  const testSalesforceConnection = async () => {
-    try {
-      const response = await fetch("/api/test-connection")
       const result = await response.json()
 
-      setSalesforceStatus(result.connected ? "connected" : "demo")
-
-      toast({
-        title: result.connected ? "Connection Successful" : "Connection Failed",
-        description: result.message,
-        variant: result.connected ? "default" : "destructive",
-      })
+      if (result.success) {
+        toast({
+          title: "Product Added Successfully",
+          description: result.message,
+        })
+        setIsAddDialogOpen(false)
+        setSelectedCategory("")
+        setCategoryFormData({})
+        refetch() // Refresh the inventory list
+      } else {
+        throw new Error(result.error || "Failed to add product")
+      }
     } catch (error) {
-      setSalesforceStatus("demo")
+      console.error("Error adding product:", error)
       toast({
-        title: "Connection Test Failed",
-        description: "Unable to test Salesforce connection",
+        title: "Error Adding Product",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const getStockStatus = (quantity: number, reorderLevel: number) => {
-    if (quantity === 0) return { label: "Out of Stock", variant: "destructive" as const }
-    if (quantity < reorderLevel) return { label: "Low Stock", variant: "secondary" as const }
-    return { label: "In Stock", variant: "default" as const }
-  }
-
-  if (error) {
+  if (loading) {
     return (
-      <SidebarInset>
-        <div className="flex items-center justify-center h-full">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle className="text-red-600">Data Loading Error</CardTitle>
-              <CardDescription>Unable to fetch inventory data</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{error}</p>
-              <Button onClick={refetch} className="w-full">
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </SidebarInset>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
     )
   }
 
   return (
-    <SidebarInset>
-      <header className="flex h-16 shrink-0 items-center gap-2 px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link href="/">Dashboard</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Inventory</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </header>
-
-      <div className="flex flex-1 flex-col gap-4 p-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Inventory Management</h1>
-            <div className="flex items-center gap-2">
-              <p className="text-muted-foreground">Manage your product inventory with Salesforce</p>
-              {salesforceStatus === "connected" && (
-                <Badge variant="default" className="flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" />
-                  Salesforce Connected
-                </Badge>
-              )}
-              {salesforceStatus === "demo" && (
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  Demo Mode
-                </Badge>
-              )}
-              {salesforceStatus !== "unknown" && (
-                <Button variant="outline" size="sm" onClick={testSalesforceConnection}>
-                  Test Connection
-                </Button>
-              )}
-            </div>
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Inventory Management</h1>
+          <p className="text-muted-foreground">
+            Salesforce VENKATA_RAMANA_MOTORS__c records
+            {isDemoMode && (
+              <span className="ml-2 inline-flex items-center gap-1 text-orange-600">
+                <Database className="h-3 w-3" />
+                Demo Mode
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={refetch} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="h-4 w-4 mr-2" />
                 Add Product
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Product</DialogTitle>
                 <DialogDescription>
-                  Select a category and fill in the product details. Data will be saved to Salesforce object:
-                  VENKATA_RAMANA_MOTORS__c
+                  Select a category and fill in the product details to add to VENKATA_RAMANA_MOTORS__c.
                 </DialogDescription>
               </DialogHeader>
-
               <div className="space-y-6 py-4">
                 {/* Category Selection */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="category" className="text-right">
-                    Category <span className="text-red-500">*</span>
-                  </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="category">Product Category *</Label>
                   <Select value={selectedCategory} onValueChange={handleCategoryChange}>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Select product category" />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a product category" />
                     </SelectTrigger>
                     <SelectContent>
                       {getCategoryNames().map((category) => (
@@ -314,136 +219,188 @@ export default function InventoryPage() {
                   </Select>
                 </div>
 
-                {/* Dynamic Fields Based on Category */}
+                {/* Dynamic Form Based on Category */}
                 {selectedCategory && (
-                  <DynamicProductForm category={selectedCategory} formData={formData} onChange={setFormData} />
-                )}
-
-                {/* Salesforce Mapping Info */}
-                {selectedCategory && (
-                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                    <h4 className="font-medium text-gray-800 mb-2">Salesforce Integration</h4>
-                    <p className="text-sm text-gray-600 mb-2">
-                      This product will be created in Salesforce object:{" "}
-                      <code className="bg-gray-200 px-1 rounded">VENKATA_RAMANA_MOTORS__c</code>
-                    </p>
-                    <div className="text-xs text-gray-500">
-                      <p>Field mappings:</p>
-                      <ul className="list-disc list-inside ml-2 space-y-1">
-                        <li>Product Name → Productname__c</li>
-                        <li>Model → Model__c</li>
-                        <li>Phase → Phase__c</li>
-                        <li>Stage → Stage__c</li>
-                        <li>Voltage → Voltage__c</li>
-                        <li>Frequency → Frequency__c</li>
-                        <li>Price → Price__c</li>
-                        <li>Quantity → Quantity__c</li>
-                      </ul>
-                    </div>
-                  </div>
+                  <DynamicProductForm
+                    category={selectedCategory}
+                    formData={categoryFormData}
+                    onChange={setCategoryFormData}
+                  />
                 )}
               </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddDialogOpen(false)
+                    setSelectedCategory("")
+                    setCategoryFormData({})
+                  }}
+                >
                   Cancel
                 </Button>
-                <Button onClick={handleAddProduct} disabled={creating || !selectedCategory}>
-                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {creating ? "Creating..." : "Add Product"}
+                <Button onClick={handleAddProduct} disabled={isSubmitting || !validateForm()}>
+                  {isSubmitting ? "Adding..." : "Add Product"}
                 </Button>
-              </DialogFooter>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Products</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{inventory.length}</div>
+          </CardContent>
+        </Card>
 
         <Card>
-          <CardContent className="pt-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search products..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Quantity</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {inventory.reduce((sum, item) => sum + (item.Quantity__c || 0), 0)}
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>
-              Products ({loading ? "..." : filteredProducts.length})
-              {loading && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Price</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-2">Loading products...</span>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.map((product) => {
-                      const status = getStockStatus(product.quantity, product.reorderLevel)
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell>
-                            <div className="flex items-center space-x-3">
-                              <Package className="h-4 w-4" />
-                              <div>
-                                <span className="font-medium">{product.name}</span>
-                                <p className="text-sm text-muted-foreground">{product.brand}</p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{product.sku}</TableCell>
-                          <TableCell>{product.category}</TableCell>
-                          <TableCell>
-                            <div>
-                              <span className="font-medium">{product.quantity}</span>
-                              <p className="text-xs text-muted-foreground">Reorder at {product.reorderLevel}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>₹{product.salePrice}</TableCell>
-                          <TableCell>
-                            <Badge variant={status.variant}>{status.label}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              <Button variant="outline" size="sm">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button variant="outline" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+            <div className="text-2xl font-bold">
+              {inventory.length > 0
+                ? formatCurrency(inventory.reduce((sum, item) => sum + item.Price__c, 0) / inventory.length)
+                : formatCurrency(0)}
+            </div>
           </CardContent>
         </Card>
       </div>
-    </SidebarInset>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                placeholder="Search by product name or model..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <select
+              value={selectedPhase}
+              onChange={(e) => setSelectedPhase(e.target.value)}
+              className="px-3 py-2 border rounded-md"
+            >
+              {phases.map((phase) => (
+                <option key={phase} value={phase}>
+                  {phase === "All" ? "All Phases" : `${phase} Phase`}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedStage}
+              onChange={(e) => setSelectedStage(e.target.value)}
+              className="px-3 py-2 border rounded-md"
+            >
+              {stages.map((stage) => (
+                <option key={stage} value={stage}>
+                  {stage === "All" ? "All Stages" : `Stage ${stage}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Inventory Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredInventory.map((item) => (
+          <Card key={item.Id} className="hover:shadow-md transition-shadow">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <CardTitle className="text-lg">{item.Productname__c}</CardTitle>
+                  <CardDescription>
+                    Model: {item.Model__c}
+                    {item.H_p__c && ` • ${item.H_p__c} HP`}
+                  </CardDescription>
+                </div>
+                <Badge className="bg-blue-100 text-blue-800">Available</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Price</span>
+                  <span className="font-medium">{formatCurrency(item.Price__c)}</span>
+                </div>
+
+                {item.Phase__c && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Phase</span>
+                    <span className="text-sm">{item.Phase__c}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Stage</span>
+                  <span className="text-sm">Stage {item.stage__c || 0}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Quantity</span>
+                  <span className="text-sm">{item.Quantity__c || 0}</span>
+                </div>
+
+                {item.H_p__c && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">HP Rating</span>
+                    <span className="text-sm">{item.H_p__c} HP</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Total Value</span>
+                  <span className="font-medium">{formatCurrency((item.Quantity__c || 0) * item.Price__c)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {filteredInventory.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">No products found</h3>
+            <p className="text-muted-foreground">
+              {inventory.length === 0
+                ? "No products exist in the VENKATA_RAMANA_MOTORS__c object. Add some products to get started."
+                : "Try adjusting your search or filter criteria."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
