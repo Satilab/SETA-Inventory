@@ -106,43 +106,45 @@ export default function QuotationsPage() {
             <CardTitle>Quotations ({quotations.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Quotation ID</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {quotations.map((quotation) => (
-                  <TableRow key={quotation.id}>
-                    <TableCell className="font-medium">{quotation.id}</TableCell>
-                    <TableCell>{quotation.customer}</TableCell>
-                    <TableCell>{quotation.date}</TableCell>
-                    <TableCell>₹{quotation.total.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={quotation.status === "Pending" ? "secondary" : "default"}>
-                        {quotation.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEdit(quotation.id)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDownload(quotation.id)}>
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Quotation ID</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {quotations.map((quotation) => (
+                    <TableRow key={quotation.id}>
+                      <TableCell className="font-medium">{quotation.id}</TableCell>
+                      <TableCell>{quotation.customer}</TableCell>
+                      <TableCell>{quotation.date}</TableCell>
+                      <TableCell>₹{quotation.total.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <Badge variant={quotation.status === "Pending" ? "secondary" : "default"}>
+                          {quotation.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(quotation.id)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleDownload(quotation.id)}>
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>

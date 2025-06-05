@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -26,57 +26,85 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Edit, MessageSquare, Phone, Users } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Search, Edit, MessageSquare, Phone, Users, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useCustomers, useCreateCustomer } from "@/hooks/use-demo-data"
+import type { Customer } from "@/lib/demo-data"
 import Link from "next/link"
-
-const customers = [
-  {
-    id: 1,
-    name: "Rajesh Electrical Works",
-    phone: "+91 9876543210",
-    email: "rajesh@electrical.com",
-    type: "Contractor",
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Modern Electronics",
-    phone: "+91 9876543211",
-    email: "info@modern.com",
-    type: "Retail",
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Power Solutions Ltd",
-    phone: "+91 9876543212",
-    email: "orders@power.com",
-    type: "Bulk",
-    status: "Inactive",
-  },
-]
 
 export default function CustomersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [newCustomer, setNewCustomer] = useState<Partial<Customer>>({
+    name: "",
+    phone: "",
+    email: "",
+    type: "Retail",
+    active: true,
+  })
+
   const { toast } = useToast()
+  const { data: customers, loading, error, refetch } = useCustomers()
+  const { createCustomer, loading: creating } = useCreateCustomer()
 
   const filteredCustomers = customers.filter(
     (customer) => customer.name.toLowerCase().includes(searchTerm.toLowerCase()) || customer.phone.includes(searchTerm),
   )
 
-  const handleAddCustomer = () => {
-    toast({ title: "Customer Added", description: "New customer has been added" })
-    setIsAddDialogOpen(false)
+  const handleAddCustomer = async () => {
+    try {
+      if (!newCustomer.name || !newCustomer.phone) {
+        toast({
+          title: "Validation Error",
+          description: "Name and phone are required",
+          variant: "destructive",
+        })
+        return
+      }
+
+      await createCustomer(newCustomer as Omit<Customer, "id">)
+      toast({
+        title: "Customer Added",
+        description: "New customer has been added to Salesforce CRM",
+      })
+      setIsAddDialogOpen(false)
+      setNewCustomer({
+        name: "",
+        phone: "",
+        email: "",
+        type: "Retail",
+        active: true,
+      })
+      refetch()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add customer to Salesforce",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleEdit = (id: number) => {
-    toast({ title: "Edit Customer", description: `Editing customer ${id}` })
-  }
-
-  const handleContact = (id: number, method: string) => {
-    toast({ title: `Contact via ${method}`, description: `Contacting customer ${id}` })
+  if (error) {
+    return (
+      <SidebarInset>
+        <div className="flex items-center justify-center h-full">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-red-600">Salesforce Connection Error</CardTitle>
+              <CardDescription>Unable to fetch customer data</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">{error}</p>
+              <Button onClick={refetch} className="w-full">
+                Retry Connection
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </SidebarInset>
+    )
   }
 
   return (
@@ -103,7 +131,7 @@ export default function CustomersPage() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Customer Management</h1>
-            <p className="text-muted-foreground">Manage customer relationships</p>
+            <p className="text-muted-foreground">Manage customer relationships with Salesforce CRM</p>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -115,30 +143,69 @@ export default function CustomersPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Customer</DialogTitle>
-                <DialogDescription>Enter customer details</DialogDescription>
+                <DialogDescription>Add customer to Salesforce CRM</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="name" className="text-right">
                     Name
                   </Label>
-                  <Input id="name" className="col-span-3" />
+                  <Input
+                    id="name"
+                    className="col-span-3"
+                    value={newCustomer.name}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                  />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="phone" className="text-right">
                     Phone
                   </Label>
-                  <Input id="phone" className="col-span-3" />
+                  <Input
+                    id="phone"
+                    className="col-span-3"
+                    value={newCustomer.phone}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="email" className="text-right">
                     Email
                   </Label>
-                  <Input id="email" type="email" className="col-span-3" />
+                  <Input
+                    id="email"
+                    type="email"
+                    className="col-span-3"
+                    value={newCustomer.email}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="type" className="text-right">
+                    Type
+                  </Label>
+                  <Select
+                    value={newCustomer.type}
+                    onValueChange={(value: "Retail" | "Contractor" | "Bulk") =>
+                      setNewCustomer({ ...newCustomer, type: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Retail">Retail</SelectItem>
+                      <SelectItem value="Contractor">Contractor</SelectItem>
+                      <SelectItem value="Bulk">Bulk</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddCustomer}>Add Customer</Button>
+                <Button onClick={handleAddCustomer} disabled={creating}>
+                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Customer
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -160,57 +227,75 @@ export default function CustomersPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Customers ({filteredCustomers.length})</CardTitle>
+            <CardTitle>
+              Customers ({loading ? "..." : filteredCustomers.length})
+              {loading && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCustomers.map((customer) => (
-                  <TableRow key={customer.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <Users className="h-4 w-4" />
-                        <span className="font-medium">{customer.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm">{customer.phone}</p>
-                        <p className="text-xs text-muted-foreground">{customer.email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{customer.type}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={customer.status === "Active" ? "default" : "secondary"}>{customer.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEdit(customer.id)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleContact(customer.id, "WhatsApp")}>
-                          <MessageSquare className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleContact(customer.id, "Phone")}>
-                          <Phone className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <span className="ml-2">Loading customers from Salesforce...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Orders</TableHead>
+                      <TableHead>Total Value</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCustomers.map((customer) => (
+                      <TableRow key={customer.id}>
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <Users className="h-4 w-4" />
+                            <span className="font-medium">{customer.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="text-sm">{customer.phone}</p>
+                            <p className="text-xs text-muted-foreground">{customer.email}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{customer.type}</Badge>
+                        </TableCell>
+                        <TableCell>{customer.totalOrders || 0}</TableCell>
+                        <TableCell>₹{(customer.totalValue || 0).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant={customer.active ? "default" : "secondary"}>
+                            {customer.active ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            <Button variant="outline" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <MessageSquare className="h-4 w-4" />
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Phone className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

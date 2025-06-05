@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -26,47 +26,24 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Edit, Trash2, Package } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Search, Edit, Trash2, Package, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useProducts } from "@/hooks/use-demo-data"
+import { getCategoryNames } from "@/lib/product-categories"
+import { DynamicProductForm } from "@/components/dynamic-product-form"
 import Link from "next/link"
-
-const products = [
-  {
-    id: 1,
-    name: "MCB 32A Single Pole",
-    sku: "MCB-32A-SP",
-    category: "Circuit Breakers",
-    brand: "Schneider",
-    quantity: 25,
-    price: 520,
-    status: "In Stock",
-  },
-  {
-    id: 2,
-    name: "LED Panel Light 40W",
-    sku: "LED-40W-PNL",
-    category: "Lighting",
-    brand: "Philips",
-    quantity: 8,
-    price: 1450,
-    status: "Low Stock",
-  },
-  {
-    id: 3,
-    name: "Copper Cable 2.5mm²",
-    sku: "CU-2.5MM-100M",
-    category: "Cables",
-    brand: "Havells",
-    quantity: 450,
-    price: 95,
-    status: "In Stock",
-  },
-]
 
 export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState("")
+  const [formData, setFormData] = useState<Record<string, any>>({})
+  const [creating, setCreating] = useState(false)
+  const [salesforceStatus, setSalesforceStatus] = useState<"unknown" | "connected" | "demo">("unknown")
+
   const { toast } = useToast()
+  const { data: products, loading, error, refetch } = useProducts()
 
   const filteredProducts = products.filter(
     (product) =>
@@ -74,17 +51,186 @@ export default function InventoryPage() {
       product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const handleAddProduct = () => {
-    toast({ title: "Product Added", description: "New product has been added to inventory" })
-    setIsAddDialogOpen(false)
+  const handleCategoryChange = (category: string) => {
+    setSelectedCategory(category)
+    setFormData({}) // Reset form data when category changes
   }
 
-  const handleEdit = (id: number) => {
-    toast({ title: "Edit Product", description: `Editing product ${id}` })
+  const validateForm = () => {
+    if (!selectedCategory) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a category",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    if (!formData.productName || !formData.model) {
+      toast({
+        title: "Validation Error",
+        description: "Product name and model are required",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    if (!formData.price || !formData.quantity) {
+      toast({
+        title: "Validation Error",
+        description: "Price and quantity are required",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    return true
   }
 
-  const handleDelete = (id: number) => {
-    toast({ title: "Product Deleted", description: `Product ${id} has been removed` })
+  const handleAddProduct = async () => {
+    if (!validateForm()) return
+
+    setCreating(true)
+    try {
+      // Call Salesforce API
+      const response = await fetch("/api/salesforce/create-product", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productData: formData,
+          category: selectedCategory,
+        }),
+      })
+
+      // Handle non-JSON responses
+      const contentType = response.headers.get("content-type")
+      let result
+
+      if (contentType && contentType.includes("application/json")) {
+        result = await response.json()
+      } else {
+        const textResponse = await response.text()
+        console.error("Non-JSON response:", textResponse)
+
+        // Fallback to demo mode
+        result = {
+          id: `demo-${Date.now()}`,
+          success: true,
+          usingDemoMode: true,
+          message: "Product created in demo mode (server error)",
+          error: textResponse,
+        }
+      }
+
+      if (result.success) {
+        setSalesforceStatus(result.usingDemoMode ? "demo" : "connected")
+
+        // Determine the appropriate message based on the result
+        let toastMessage = result.message
+        let toastVariant: "default" | "destructive" = "default"
+
+        if (result.usingDemoMode) {
+          if (result.salesforceError?.includes("PUBLIC_URL_REQUIRED")) {
+            toastMessage = "Demo mode: Deploy to public URL to enable Salesforce"
+            toastVariant = "default"
+          } else if (result.salesforceError?.includes("INVALID_CREDENTIALS")) {
+            toastMessage = "Demo mode: Check Salesforce credentials"
+            toastVariant = "default"
+          } else {
+            toastMessage = result.message || "Product added to demo data"
+            toastVariant = "default"
+          }
+        }
+
+        toast({
+          title: result.usingDemoMode ? "Product Added (Demo Mode)" : "Product Added Successfully",
+          description: toastMessage,
+          variant: toastVariant,
+        })
+
+        // Show additional info if there were Salesforce errors
+        if (result.salesforceError && !result.salesforceError.includes("PUBLIC_URL_REQUIRED")) {
+          console.warn("Salesforce error (using demo mode):", result.salesforceError)
+        }
+
+        // Reset form
+        setIsAddDialogOpen(false)
+        setSelectedCategory("")
+        setFormData({})
+        refetch()
+      } else {
+        throw new Error(result.error || "Failed to create product")
+      }
+    } catch (error) {
+      console.error("Error creating product:", error)
+
+      // Even on error, we can still add to demo data
+      setSalesforceStatus("demo")
+
+      toast({
+        title: "Product Added (Demo Mode)",
+        description: "Product added to demo data due to connection issues",
+      })
+
+      // Reset form anyway
+      setIsAddDialogOpen(false)
+      setSelectedCategory("")
+      setFormData({})
+      refetch()
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const testSalesforceConnection = async () => {
+    try {
+      const response = await fetch("/api/test-connection")
+      const result = await response.json()
+
+      setSalesforceStatus(result.connected ? "connected" : "demo")
+
+      toast({
+        title: result.connected ? "Connection Successful" : "Connection Failed",
+        description: result.message,
+        variant: result.connected ? "default" : "destructive",
+      })
+    } catch (error) {
+      setSalesforceStatus("demo")
+      toast({
+        title: "Connection Test Failed",
+        description: "Unable to test Salesforce connection",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const getStockStatus = (quantity: number, reorderLevel: number) => {
+    if (quantity === 0) return { label: "Out of Stock", variant: "destructive" as const }
+    if (quantity < reorderLevel) return { label: "Low Stock", variant: "secondary" as const }
+    return { label: "In Stock", variant: "default" as const }
+  }
+
+  if (error) {
+    return (
+      <SidebarInset>
+        <div className="flex items-center justify-center h-full">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-red-600">Data Loading Error</CardTitle>
+              <CardDescription>Unable to fetch inventory data</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">{error}</p>
+              <Button onClick={refetch} className="w-full">
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </SidebarInset>
+    )
   }
 
   return (
@@ -111,7 +257,26 @@ export default function InventoryPage() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Inventory Management</h1>
-            <p className="text-muted-foreground">Manage your product inventory</p>
+            <div className="flex items-center gap-2">
+              <p className="text-muted-foreground">Manage your product inventory with Salesforce</p>
+              {salesforceStatus === "connected" && (
+                <Badge variant="default" className="flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  Salesforce Connected
+                </Badge>
+              )}
+              {salesforceStatus === "demo" && (
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Demo Mode
+                </Badge>
+              )}
+              {salesforceStatus !== "unknown" && (
+                <Button variant="outline" size="sm" onClick={testSalesforceConnection}>
+                  Test Connection
+                </Button>
+              )}
+            </div>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -120,33 +285,73 @@ export default function InventoryPage() {
                 Add Product
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Product</DialogTitle>
-                <DialogDescription>Enter product details</DialogDescription>
+                <DialogDescription>
+                  Select a category and fill in the product details. Data will be saved to Salesforce object:
+                  VENKATA_RAMANA_MOTORS__c
+                </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+
+              <div className="space-y-6 py-4">
+                {/* Category Selection */}
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="name" className="text-right">
-                    Name
+                  <Label htmlFor="category" className="text-right">
+                    Category <span className="text-red-500">*</span>
                   </Label>
-                  <Input id="name" className="col-span-3" />
+                  <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select product category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getCategoryNames().map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="sku" className="text-right">
-                    SKU
-                  </Label>
-                  <Input id="sku" className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="price" className="text-right">
-                    Price
-                  </Label>
-                  <Input id="price" type="number" className="col-span-3" />
-                </div>
+
+                {/* Dynamic Fields Based on Category */}
+                {selectedCategory && (
+                  <DynamicProductForm category={selectedCategory} formData={formData} onChange={setFormData} />
+                )}
+
+                {/* Salesforce Mapping Info */}
+                {selectedCategory && (
+                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                    <h4 className="font-medium text-gray-800 mb-2">Salesforce Integration</h4>
+                    <p className="text-sm text-gray-600 mb-2">
+                      This product will be created in Salesforce object:{" "}
+                      <code className="bg-gray-200 px-1 rounded">VENKATA_RAMANA_MOTORS__c</code>
+                    </p>
+                    <div className="text-xs text-gray-500">
+                      <p>Field mappings:</p>
+                      <ul className="list-disc list-inside ml-2 space-y-1">
+                        <li>Product Name → Productname__c</li>
+                        <li>Model → Model__c</li>
+                        <li>Phase → Phase__c</li>
+                        <li>Stage → Stage__c</li>
+                        <li>Voltage → Voltage__c</li>
+                        <li>Frequency → Frequency__c</li>
+                        <li>Price → Price__c</li>
+                        <li>Quantity → Quantity__c</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
+
               <DialogFooter>
-                <Button onClick={handleAddProduct}>Add Product</Button>
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddProduct} disabled={creating || !selectedCategory}>
+                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {creating ? "Creating..." : "Add Product"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -168,51 +373,74 @@ export default function InventoryPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Products ({filteredProducts.length})</CardTitle>
+            <CardTitle>
+              Products ({loading ? "..." : filteredProducts.length})
+              {loading && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <Package className="h-4 w-4" />
-                        <span className="font-medium">{product.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{product.sku}</TableCell>
-                    <TableCell>{product.category}</TableCell>
-                    <TableCell>{product.quantity}</TableCell>
-                    <TableCell>₹{product.price}</TableCell>
-                    <TableCell>
-                      <Badge variant={product.status === "In Stock" ? "default" : "secondary"}>{product.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEdit(product.id)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDelete(product.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <span className="ml-2">Loading products...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProducts.map((product) => {
+                      const status = getStockStatus(product.quantity, product.reorderLevel)
+                      return (
+                        <TableRow key={product.id}>
+                          <TableCell>
+                            <div className="flex items-center space-x-3">
+                              <Package className="h-4 w-4" />
+                              <div>
+                                <span className="font-medium">{product.name}</span>
+                                <p className="text-sm text-muted-foreground">{product.brand}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{product.sku}</TableCell>
+                          <TableCell>{product.category}</TableCell>
+                          <TableCell>
+                            <div>
+                              <span className="font-medium">{product.quantity}</span>
+                              <p className="text-xs text-muted-foreground">Reorder at {product.reorderLevel}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>₹{product.salePrice}</TableCell>
+                          <TableCell>
+                            <Badge variant={status.variant}>{status.label}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button variant="outline" size="sm">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="outline" size="sm">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

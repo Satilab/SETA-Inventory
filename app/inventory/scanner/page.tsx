@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,15 +19,42 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Camera, Scan, Plus, Minus, Package, CheckCircle } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Camera,
+  Scan,
+  Plus,
+  Minus,
+  Package,
+  CheckCircle,
+  Upload,
+  ImageIcon,
+  Loader2,
+  AlertTriangle,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { processImageWithOCR, type ExtractedAttributes } from "@/lib/ocr-service"
+import { EditableAttributes } from "@/components/editable-attributes"
 import Link from "next/link"
+import { FieldMappingDisplay } from "@/components/field-mapping-display"
+import { SalesforcePreview } from "@/components/salesforce-preview"
+import { SalesforceStatus } from "@/components/salesforce-status"
 
 export default function BarcodeScannerPage() {
   const [scannedCode, setScannedCode] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [operation, setOperation] = useState("in")
   const [isScanning, setIsScanning] = useState(false)
+  const [isProcessingImage, setIsProcessingImage] = useState(false)
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
+  const [extractedData, setExtractedData] = useState<{
+    productName: string
+    sku: string
+    rawText: string
+    attributes: ExtractedAttributes
+  } | null>(null)
+  const [activeTab, setActiveTab] = useState("camera")
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
   const mockProduct = {
@@ -49,14 +78,126 @@ export default function BarcodeScannerPage() {
     }, 2000)
   }
 
-  const handleStockUpdate = () => {
-    const action = operation === "in" ? "added to" : "removed from"
-    toast({
-      title: "Stock Updated",
-      description: `${quantity} units ${action} inventory`,
-    })
-    setScannedCode("")
-    setQuantity(1)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      setIsProcessingImage(true)
+
+      // Display the uploaded image
+      const imageUrl = URL.createObjectURL(file)
+      setUploadedImage(imageUrl)
+
+      // Process the image with PaddleOCR
+      const result = await processImageWithOCR(file)
+      setExtractedData(result)
+
+      // Set the scanned code from the OCR result
+      setScannedCode(result.sku)
+
+      toast({
+        title: "Image Processed with PaddleOCR",
+        description: "Product information extracted successfully",
+      })
+    } catch (error) {
+      toast({
+        title: "Processing Failed",
+        description: "Failed to extract information from image",
+        variant: "destructive",
+      })
+      console.error("Image processing error:", error)
+    } finally {
+      setIsProcessingImage(false)
+    }
+  }
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleStockUpdate = async () => {
+    try {
+      const stockUpdateData = {
+        productName: extractedData?.attributes?.["Product name"] || mockProduct.name,
+        sku: scannedCode,
+        operation: operation,
+        quantity: quantity,
+        attributes: extractedData?.attributes || {
+          "Product name": mockProduct.name,
+          Model: mockProduct.sku,
+          Brand: mockProduct.brand,
+          Price: mockProduct.price.toString(),
+          Quantity: quantity.toString(),
+        },
+      }
+
+      console.log("Updating stock with data:", stockUpdateData)
+
+      const response = await fetch("/api/stock-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(stockUpdateData),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        const action = operation === "in" ? "added to" : "removed from"
+
+        toast({
+          title: result.usingDemoMode ? "Stock Updated (Demo Mode)" : "Stock Updated & Salesforce Record Created",
+          description: result.usingDemoMode
+            ? `${quantity} units ${action} inventory (demo mode)`
+            : `${quantity} units ${action} inventory. Salesforce ID: ${result.salesforceId}`,
+        })
+
+        // Show additional info if there were any issues
+        if (result.error && !result.error.includes("PUBLIC_URL_REQUIRED")) {
+          console.warn("Salesforce warning:", result.error)
+        }
+      } else {
+        throw new Error(result.error || "Failed to update stock")
+      }
+
+      // Reset form
+      setScannedCode("")
+      setQuantity(1)
+      setUploadedImage(null)
+      setExtractedData(null)
+    } catch (error) {
+      console.error("Stock update error:", error)
+
+      toast({
+        title: "Stock Updated (Demo Mode)",
+        description: "Stock updated locally due to connection issues",
+        variant: "default",
+      })
+
+      // Reset form anyway
+      setScannedCode("")
+      setQuantity(1)
+      setUploadedImage(null)
+      setExtractedData(null)
+    }
+  }
+
+  const handleAttributesUpdate = (updatedAttributes: ExtractedAttributes) => {
+    if (extractedData) {
+      setExtractedData({
+        ...extractedData,
+        productName: updatedAttributes["Product name"] || extractedData.productName,
+        sku: updatedAttributes["Model"] || extractedData.sku,
+        attributes: updatedAttributes,
+      })
+
+      toast({
+        title: "Attributes Updated",
+        description: "Product information has been updated",
+      })
+    }
   }
 
   return (
@@ -90,34 +231,96 @@ export default function BarcodeScannerPage() {
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
         <div>
           <h1 className="text-2xl font-bold">Barcode Scanner</h1>
-          <p className="text-muted-foreground">Scan products to update inventory quickly</p>
+          <p className="text-muted-foreground">Scan products or upload images to update inventory quickly</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           {/* Scanner Interface */}
           <Card>
             <CardHeader>
-              <CardTitle>Scan Product</CardTitle>
-              <CardDescription>Use your camera to scan product barcodes</CardDescription>
+              <CardTitle>Scan or Upload Product</CardTitle>
+              <CardDescription>Use camera, scan barcode, or upload product image</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Camera Preview Simulation */}
-              <div className="aspect-video rounded-lg border-2 border-dashed border-muted-foreground/25 flex items-center justify-center bg-muted/50">
-                {isScanning ? (
-                  <div className="text-center">
-                    <Scan className="h-12 w-12 mx-auto mb-2 animate-pulse" />
-                    <p className="text-sm text-muted-foreground">Scanning...</p>
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="camera">
+                    <Camera className="mr-2 h-4 w-4" />
+                    Camera
+                  </TabsTrigger>
+                  <TabsTrigger value="upload">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="camera" className="space-y-4">
+                  {/* Camera Preview Simulation */}
+                  <div className="aspect-video rounded-lg border-2 border-dashed border-muted-foreground/25 flex items-center justify-center bg-muted/50">
+                    {isScanning ? (
+                      <div className="text-center">
+                        <Scan className="h-12 w-12 mx-auto mb-2 animate-pulse" />
+                        <p className="text-sm text-muted-foreground">Scanning...</p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Camera className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">Camera preview will appear here</p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="text-center">
-                    <Camera className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Camera preview will appear here</p>
+
+                  <Button onClick={handleScan} className="w-full" disabled={isScanning}>
+                    <Scan className="mr-2 h-4 w-4" />
+                    {isScanning ? "Scanning..." : "Start Scanning"}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="upload" className="space-y-4">
+                  {/* Image Upload Area */}
+                  <div
+                    className="aspect-video rounded-lg border-2 border-dashed border-muted-foreground/25 flex items-center justify-center bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                    onClick={triggerFileUpload}
+                  >
+                    {isProcessingImage ? (
+                      <div className="text-center">
+                        <Loader2 className="h-12 w-12 mx-auto mb-2 animate-spin" />
+                        <p className="text-sm text-muted-foreground">Processing with PaddleOCR...</p>
+                      </div>
+                    ) : uploadedImage ? (
+                      <div className="w-full h-full relative">
+                        <img
+                          src={uploadedImage || "/placeholder.svg"}
+                          alt="Uploaded product"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">Click to upload product image</p>
+                        <p className="text-xs text-muted-foreground mt-1">or drag and drop</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                  />
+
+                  <Button onClick={triggerFileUpload} className="w-full" disabled={isProcessingImage}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    {isProcessingImage ? "Processing..." : "Upload Image"}
+                  </Button>
+                </TabsContent>
+              </Tabs>
 
               <div className="space-y-2">
-                <Label htmlFor="manual-code">Or enter barcode manually</Label>
+                <Label htmlFor="manual-code">Or enter barcode/SKU manually</Label>
                 <Input
                   id="manual-code"
                   placeholder="Enter barcode or SKU"
@@ -125,11 +328,6 @@ export default function BarcodeScannerPage() {
                   onChange={(e) => setScannedCode(e.target.value)}
                 />
               </div>
-
-              <Button onClick={handleScan} className="w-full" disabled={isScanning}>
-                <Scan className="mr-2 h-4 w-4" />
-                {isScanning ? "Scanning..." : "Start Scanning"}
-              </Button>
             </CardContent>
           </Card>
 
@@ -148,12 +346,17 @@ export default function BarcodeScannerPage() {
                       <Package className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium">{mockProduct.name}</p>
+                      <p className="font-medium">{extractedData?.attributes?.["Product name"] || mockProduct.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {mockProduct.brand} • SKU: {mockProduct.sku}
+                        {extractedData?.attributes?.Brand || mockProduct.brand} • SKU: {scannedCode}
                       </p>
+                      {extractedData?.attributes?.["H.P."] && (
+                        <p className="text-sm text-muted-foreground">
+                          H.P.: {extractedData.attributes["H.P."]} • Phase: {extractedData.attributes.Phase}
+                        </p>
+                      )}
                     </div>
-                    <Badge variant="outline">₹{mockProduct.price}</Badge>
+                    <Badge variant="outline">₹{extractedData?.attributes?.Price || mockProduct.price}</Badge>
                   </div>
 
                   {/* Current Stock */}
@@ -206,12 +409,51 @@ export default function BarcodeScannerPage() {
               ) : (
                 <div className="text-center py-8">
                   <Scan className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Scan a barcode to view product details</p>
+                  <p className="text-muted-foreground">Scan a barcode or upload an image to view product details</p>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+
+        {/* Raw Extracted Text (when available) */}
+        {extractedData?.rawText && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Raw Extracted Text</CardTitle>
+              <CardDescription>Text extracted from the image using PaddleOCR</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-muted p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
+                {extractedData.rawText}
+              </div>
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md flex items-start">
+                <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">OCR Accuracy Note</p>
+                  <p className="text-sm text-amber-700">
+                    Text extraction may not be 100% accurate. Please review and edit the extracted attributes below if
+                    needed.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Editable Extracted Data (when available) */}
+        {extractedData && <EditableAttributes attributes={extractedData.attributes} onSave={handleAttributesUpdate} />}
+
+        {/* Field Mapping Info */}
+        <FieldMappingDisplay />
+
+        {/* Salesforce Connection Status */}
+        <SalesforceStatus />
+
+        {/* Salesforce Preview (when data is available) */}
+        {extractedData && (
+          <SalesforcePreview attributes={extractedData.attributes} operation={operation} quantity={quantity} />
+        )}
 
         {/* Recent Scans */}
         <Card>

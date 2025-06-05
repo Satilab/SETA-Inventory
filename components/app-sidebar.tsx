@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   TrendingUp,
   FileCheck,
+  Settings,
 } from "lucide-react"
 
 import {
@@ -85,6 +86,11 @@ const data = {
       title: "Finance",
       url: "/finance",
       icon: Calculator,
+    },
+    {
+      title: "Debug",
+      url: "/debug",
+      icon: Settings,
     },
   ],
 }
