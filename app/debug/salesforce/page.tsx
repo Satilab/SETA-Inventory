@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, XCircle, AlertCircle, RefreshCw } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { CheckCircle, XCircle, AlertCircle, RefreshCw, ExternalLink, Copy } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface ConfigStatus {
   hasInstanceUrl: boolean
@@ -14,6 +16,9 @@ interface ConfigStatus {
   hasPassword: boolean
   hasSecurityToken: boolean
   instanceUrl?: string
+  environment?: string
+  vercelEnv?: string
+  deploymentUrl?: string
 }
 
 interface ConnectionTest {
@@ -26,6 +31,7 @@ export default function SalesforceDebugPage() {
   const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
   const [connectionTest, setConnectionTest] = useState<ConnectionTest | null>(null)
   const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchConfigStatus()
@@ -57,9 +63,28 @@ export default function SalesforceDebugPage() {
     }
   }
 
+  const copyEnvTemplate = () => {
+    const template = `# Salesforce Configuration (Add these to Vercel Environment Variables)
+SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
+SALESFORCE_CLIENT_ID=your_client_id_here
+SALESFORCE_CLIENT_SECRET=your_client_secret_here
+SALESFORCE_USERNAME=your_username_here
+SALESFORCE_PASSWORD=your_password_here
+SALESFORCE_SECURITY_TOKEN=your_security_token_here`
+
+    navigator.clipboard.writeText(template)
+    toast({
+      title: "Environment Template Copied",
+      description: "Paste this template in your Vercel environment variables",
+    })
+  }
+
   const getStatusIcon = (status: boolean) => {
     return status ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
   }
+
+  const isProduction = configStatus?.environment === "production"
+  const isVercel = configStatus?.vercelEnv !== "not-vercel"
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -73,6 +98,32 @@ export default function SalesforceDebugPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Deployment Environment Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Deployment Environment</CardTitle>
+          <CardDescription>Current deployment and environment information</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {configStatus && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span>Environment</span>
+                <Badge variant={isProduction ? "default" : "secondary"}>{configStatus.environment || "unknown"}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Platform</span>
+                <Badge variant={isVercel ? "default" : "secondary"}>{isVercel ? "Vercel" : "Local/Other"}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Deployment URL</span>
+                <Badge variant="outline">{configStatus.deploymentUrl || "localhost"}</Badge>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Configuration Status */}
       <Card>
@@ -116,6 +167,48 @@ export default function SalesforceDebugPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Deployment Instructions */}
+      {isVercel && !configStatus?.hasInstanceUrl && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vercel Environment Variables Setup</CardTitle>
+            <CardDescription>Configure Salesforce credentials in your Vercel project</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Environment variables are not configured in Vercel. Follow these steps to set them up.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-2">
+              <h4 className="font-medium">Steps to Configure:</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                <li>Go to your Vercel project dashboard</li>
+                <li>Navigate to Settings → Environment Variables</li>
+                <li>Add each Salesforce environment variable</li>
+                <li>Set Environment to "Production" and "Preview"</li>
+                <li>Redeploy your application</li>
+              </ol>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={copyEnvTemplate} variant="outline" size="sm">
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Environment Template
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <a href="https://vercel.com/dashboard" target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open Vercel Dashboard
+                </a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Connection Test */}
       <Card>
@@ -164,16 +257,16 @@ export default function SalesforceDebugPage() {
       <Card>
         <CardHeader>
           <CardTitle>Troubleshooting Guide</CardTitle>
-          <CardDescription>Common issues and solutions</CardDescription>
+          <CardDescription>Common deployment issues and solutions</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" />
               <div>
-                <h4 className="font-medium">Invalid request, only public URLs are supported</h4>
+                <h4 className="font-medium">Salesforce not configured</h4>
                 <p className="text-sm text-muted-foreground">
-                  Your instance URL format is incorrect. Use format: https://yourinstance.my.salesforce.com
+                  Add all 6 Salesforce environment variables in your Vercel project settings
                 </p>
               </div>
             </div>
@@ -189,9 +282,9 @@ export default function SalesforceDebugPage() {
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" />
               <div>
-                <h4 className="font-medium">Connected App Issues</h4>
+                <h4 className="font-medium">Invalid instance URL</h4>
                 <p className="text-sm text-muted-foreground">
-                  Ensure your Connected App has the correct OAuth settings and API access enabled
+                  Use format: https://yourinstance.my.salesforce.com (not login.salesforce.com)
                 </p>
               </div>
             </div>
