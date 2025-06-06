@@ -30,7 +30,7 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       hasUsername: Boolean(username),
       hasPassword: Boolean(password),
       hasSecurityToken: Boolean(securityToken),
-      instanceUrl: instanceUrl?.substring(0, 30) + "..." || "Not set",
+      instanceUrl: instanceUrl?.substring(0, 50) + "..." || "Not set",
     })
 
     // Check if we have all required credentials
@@ -74,12 +74,22 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       }
     }
 
-    // Validate URL format with more specific patterns
+    // Updated URL validation patterns to include your specific format
     const urlPatterns = [
+      // Traditional formats
       /^https:\/\/[a-zA-Z0-9-]+\.my\.salesforce\.com$/, // Production
       /^https:\/\/[a-zA-Z0-9-]+--[a-zA-Z0-9-]+\.my\.salesforce\.com$/, // Sandbox
-      /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.my\.salesforce\.com$/, // Developer Edition
+      /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.my\.salesforce\.com$/, // Developer Edition (traditional)
+
+      // Lightning/Force.com formats (newer)
       /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.lightning\.force\.com$/, // Trailhead Playground
+      /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.develop\.lightning\.force\.com$/, // Developer Edition (new format)
+      /^https:\/\/[a-zA-Z0-9-]+\.lightning\.force\.com$/, // Lightning Experience
+      /^https:\/\/[a-zA-Z0-9-]+\.develop\.lightning\.force\.com$/, // Development instances
+
+      // Enhanced Domain formats
+      /^https:\/\/[a-zA-Z0-9-]+\.my\.salesforce-sites\.com$/, // Sites
+      /^https:\/\/[a-zA-Z0-9-]+\.force\.com$/, // Force.com sites
     ]
 
     const isValidFormat = urlPatterns.some((pattern) => pattern.test(normalizedInstanceUrl))
@@ -95,6 +105,8 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
             "https://yourcompany.my.salesforce.com (Production)",
             "https://yourcompany--sandbox.my.salesforce.com (Sandbox)",
             "https://yourcompany-dev-ed.my.salesforce.com (Developer Edition)",
+            "https://yourcompany-dev-ed.lightning.force.com (Trailhead)",
+            "https://yourcompany-dev-ed.develop.lightning.force.com (Developer Edition - New)",
           ],
         },
       }
@@ -108,7 +120,9 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       normalizedInstanceUrl.includes("--") ||
       normalizedInstanceUrl.includes("sandbox") ||
       normalizedInstanceUrl.includes("test") ||
-      normalizedInstanceUrl.includes("dev-ed")
+      normalizedInstanceUrl.includes("dev-ed") ||
+      normalizedInstanceUrl.includes("develop") ||
+      normalizedInstanceUrl.includes("lightning.force.com")
     ) {
       loginUrl = "https://test.salesforce.com"
     }
@@ -117,6 +131,7 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       loginUrl,
       instanceUrl: normalizedInstanceUrl,
       username: username.substring(0, 3) + "***", // Partial username for security
+      urlFormat: "Developer Edition (Lightning)",
     })
 
     // Get access token
@@ -130,6 +145,7 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
     })
 
     console.log("🔐 Attempting Salesforce authentication to:", tokenUrl)
+    console.log("🔐 For instance URL:", normalizedInstanceUrl)
 
     const response = await fetch(tokenUrl, {
       method: "POST",
@@ -188,7 +204,7 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
             "Verify your Salesforce instance URL is correct",
             "Check if your Salesforce org is active",
             "Try logging into Salesforce manually to get the correct URL",
-            "For sandbox orgs, ensure you're using the --sandbox format",
+            "For Developer Edition, try both .my.salesforce.com and .lightning.force.com formats",
           ],
         },
       }

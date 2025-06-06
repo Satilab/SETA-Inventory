@@ -16,6 +16,7 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
         "https://yourcompany.my.salesforce.com",
         "https://yourcompany--sandbox.my.salesforce.com",
         "https://yourcompany-dev-ed.my.salesforce.com",
+        "https://yourcompany-dev-ed.develop.lightning.force.com",
       ],
     }
   }
@@ -80,12 +81,13 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
           "Look for URLs like: https://yourcompany.my.salesforce.com",
           "For Developer Edition: https://yourcompany-dev-ed.my.salesforce.com",
           "For Sandbox: https://yourcompany--sandbox.my.salesforce.com",
+          "For Lightning: https://yourcompany-dev-ed.develop.lightning.force.com",
         ],
       }
     }
   }
 
-  // Valid URL patterns
+  // Valid URL patterns - Updated to include your specific format
   const validPatterns = [
     {
       pattern: /^https:\/\/[a-zA-Z0-9-]+\.my\.salesforce\.com$/,
@@ -102,6 +104,18 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
     {
       pattern: /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.lightning\.force\.com$/,
       type: "Trailhead Playground",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.develop\.lightning\.force\.com$/,
+      type: "Developer Edition (Lightning)",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+\.lightning\.force\.com$/,
+      type: "Lightning Experience",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+\.develop\.lightning\.force\.com$/,
+      type: "Development Instance",
     },
   ]
 
@@ -126,6 +140,7 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
       "https://yourcompany--sandbox.my.salesforce.com (Sandbox)",
       "https://yourcompany-dev-ed.my.salesforce.com (Developer Edition)",
       "https://yourcompany-dev-ed.lightning.force.com (Trailhead)",
+      "https://yourcompany-dev-ed.develop.lightning.force.com (Developer Edition - New)",
     ],
   }
 }
@@ -136,7 +151,9 @@ export function getSalesforceLoginUrl(instanceUrl: string): string {
     instanceUrl.includes("--") ||
     instanceUrl.includes("sandbox") ||
     instanceUrl.includes("test") ||
-    instanceUrl.includes("dev-ed")
+    instanceUrl.includes("dev-ed") ||
+    instanceUrl.includes("develop") ||
+    instanceUrl.includes("lightning.force.com")
   ) {
     return "https://test.salesforce.com"
   }
