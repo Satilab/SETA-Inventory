@@ -1,81 +1,63 @@
-# 🚀 Salesforce Deployment Guide
+# Salesforce Deployment Guide
 
 ## Environment Variables Setup
 
-When deploying to Vercel, you need to configure the Salesforce environment variables in your Vercel project settings.
+### For Vercel Deployment
 
-### 📋 Required Environment Variables
-
-Add these environment variables in your Vercel project dashboard:
+1. **Go to your Vercel project dashboard**
+2. **Navigate to Settings → Environment Variables**
+3. **Add the following environment variables** (WITHOUT NEXT_PUBLIC_ prefix for security):
 
 \`\`\`bash
-# Salesforce Configuration (Client-side accessible for this app)
-NEXT_PUBLIC_SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
-NEXT_PUBLIC_SALESFORCE_CLIENT_ID=your_client_id_here
-NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET=your_client_secret_here
-NEXT_PUBLIC_SALESFORCE_USERNAME=your_username_here
-NEXT_PUBLIC_SALESFORCE_PASSWORD=your_password_here
-NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here
+# Server-side only environment variables (SECURE)
+SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
+SALESFORCE_CLIENT_ID=your_client_id_here
+SALESFORCE_CLIENT_SECRET=your_client_secret_here
+SALESFORCE_USERNAME=your_username_here
+SALESFORCE_PASSWORD=your_password_here
+SALESFORCE_SECURITY_TOKEN=your_security_token_here
 \`\`\`
 
-### ✅ Your Current Configuration
+4. **Set Environment Scope**: 
+   - Select "Production" and "Preview" for each variable
+   - This ensures they're available in all deployments
 
-Based on your Vercel settings, you have correctly configured:
-- ✅ NEXT_PUBLIC_SALESFORCE_INSTANCE_URL
-- ✅ NEXT_PUBLIC_SALESFORCE_CLIENT_ID
-- ✅ NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET
-- ✅ NEXT_PUBLIC_SALESFORCE_USERNAME
-- ✅ NEXT_PUBLIC_SALESFORCE_PASSWORD
-- ✅ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN
+5. **Redeploy your application** after adding all variables
 
-### 🔧 Vercel Deployment Steps
+### Security Notes
 
-1. **Environment Variables** (✅ Already Done):
-   - Your environment variables are correctly configured in Vercel
-   - All 6 required variables are present with NEXT_PUBLIC_ prefix
+- ✅ **DO NOT** use `NEXT_PUBLIC_` prefix for Salesforce credentials
+- ✅ These variables are server-side only and not exposed to the client
+- ✅ Credentials are kept secure and not visible in browser
+- ✅ Only server components and API routes can access these values
 
-2. **Redeploy**:
-   - After updating the code, redeploy your app
-   - Go to Deployments tab and click "Redeploy"
+### Getting Your Salesforce Credentials
 
-### 🔍 Troubleshooting
+1. **Instance URL**: 
+   - Format: `https://yourinstance.my.salesforce.com`
+   - For sandbox: `https://yourinstance.sandbox.my.salesforce.com`
 
-**Common Issues:**
+2. **Client ID & Secret**: 
+   - Create a Connected App in Salesforce Setup
+   - Enable OAuth settings
+   - Copy Consumer Key (Client ID) and Consumer Secret (Client Secret)
 
-1. **"Salesforce not configured"** (✅ Should be fixed now)
-   - Code now uses NEXT_PUBLIC_ prefixed environment variables
-   - Matches your Vercel configuration
+3. **Username & Password**: 
+   - Your Salesforce login credentials
 
-2. **"Authentication Failed"**
-   - ✅ Check your Salesforce credentials
-   - ✅ Verify security token is current
-   - ✅ For sandbox, use `test.salesforce.com` in instance URL
+4. **Security Token**: 
+   - Go to Personal Settings → Reset My Security Token
+   - Check your email for the new token
 
-3. **"Invalid request, only public URLs are supported"**
-   - ✅ Use format: `https://yourinstance.my.salesforce.com`
-   - ✅ Don't use `login.salesforce.com` or `test.salesforce.com`
+### Troubleshooting
 
-### 📊 Testing Deployment
+- **Authentication Failed**: Check username, password, and security token
+- **Invalid Instance URL**: Use your specific instance URL, not login.salesforce.com
+- **Permission Errors**: Ensure your user has API access and object permissions
 
-After deployment, test these URLs:
-- `/debug/salesforce` - Check configuration status
-- `/customers` - Test customer data fetching
-- `/inventory` - Test inventory data fetching
-- `/inventory/alerts` - Test alerts data fetching
+### Testing
 
-### 🔐 Security Notes
-
-- Environment variables use NEXT_PUBLIC_ prefix for this application
-- Credentials are accessible in the browser (consider server-side only for production)
-- Use Vercel's secure environment variable storage
-- Rotate security tokens periodically
-
-### 🚀 Next Steps
-
-1. Redeploy your application (code has been updated)
-2. Test the connection at `/debug/salesforce`
-3. Verify customer data loads at `/customers`
-4. Check inventory data at `/inventory`
+After deployment, visit `/debug/salesforce` to verify your configuration.
 \`\`\`
 
-Let's also update the debug page to show the correct environment variable names:
+Now let's create a server action to safely get configuration status:

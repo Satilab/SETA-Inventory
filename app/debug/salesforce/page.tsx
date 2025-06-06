@@ -5,8 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, XCircle, AlertCircle, RefreshCw } from "lucide-react"
+import { CheckCircle, XCircle, AlertCircle, RefreshCw, Copy, ExternalLink } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { getSalesforceConfigAction } from "@/app/actions/salesforce-config"
 
 interface ConfigStatus {
   hasInstanceUrl: boolean
@@ -31,6 +32,7 @@ export default function SalesforceDebugPage() {
   const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
   const [connectionTest, setConnectionTest] = useState<ConnectionTest | null>(null)
   const [loading, setLoading] = useState(false)
+  const [configLoading, setConfigLoading] = useState(true)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -39,11 +41,17 @@ export default function SalesforceDebugPage() {
 
   const fetchConfigStatus = async () => {
     try {
-      const response = await fetch("/api/debug/salesforce")
-      const data = await response.json()
-      setConfigStatus(data)
+      setConfigLoading(true)
+      const result = await getSalesforceConfigAction()
+      if (result.success) {
+        setConfigStatus(result.data)
+      } else {
+        console.error("Failed to get config status:", result.error)
+      }
     } catch (error) {
       console.error("Error fetching config status:", error)
+    } finally {
+      setConfigLoading(false)
     }
   }
 
@@ -64,18 +72,19 @@ export default function SalesforceDebugPage() {
   }
 
   const copyEnvTemplate = () => {
-    const template = `# Salesforce Configuration (Add these to Vercel Environment Variables)
-NEXT_PUBLIC_SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
-NEXT_PUBLIC_SALESFORCE_CLIENT_ID=your_client_id_here
-NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET=your_client_secret_here
-NEXT_PUBLIC_SALESFORCE_USERNAME=your_username_here
-NEXT_PUBLIC_SALESFORCE_PASSWORD=your_password_here
-NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
+    const template = `# Salesforce Configuration (Server-side only - SECURE)
+# Add these to Vercel Environment Variables WITHOUT NEXT_PUBLIC_ prefix
+SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
+SALESFORCE_CLIENT_ID=your_client_id_here
+SALESFORCE_CLIENT_SECRET=your_client_secret_here
+SALESFORCE_USERNAME=your_username_here
+SALESFORCE_PASSWORD=your_password_here
+SALESFORCE_SECURITY_TOKEN=your_security_token_here`
 
     navigator.clipboard.writeText(template)
     toast({
-      title: "Environment Template Copied",
-      description: "These match your current Vercel configuration",
+      title: "Secure Environment Template Copied",
+      description: "These are server-side only variables (no NEXT_PUBLIC_ prefix)",
     })
   }
 
@@ -92,13 +101,22 @@ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Salesforce Configuration Debug</h1>
-          <p className="text-muted-foreground">Check your Salesforce integration status</p>
+          <p className="text-muted-foreground">Check your secure Salesforce integration status</p>
         </div>
-        <Button onClick={fetchConfigStatus} variant="outline">
-          <RefreshCw className="h-4 w-4 mr-2" />
+        <Button onClick={fetchConfigStatus} variant="outline" disabled={configLoading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${configLoading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
+
+      {/* Security Notice */}
+      <Alert className="border-blue-200 bg-blue-50">
+        <AlertCircle className="h-4 w-4 text-blue-600" />
+        <AlertDescription className="text-blue-800">
+          🔒 <strong>Secure Configuration:</strong> All Salesforce credentials are server-side only and not exposed to
+          the client browser.
+        </AlertDescription>
+      </Alert>
 
       {/* Configuration Status Alert */}
       {configStatus && (
@@ -119,7 +137,9 @@ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
           <CardDescription>Current deployment and environment information</CardDescription>
         </CardHeader>
         <CardContent>
-          {configStatus && (
+          {configLoading ? (
+            <p>Loading environment information...</p>
+          ) : configStatus ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span>Environment</span>
@@ -134,6 +154,8 @@ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
                 <Badge variant="outline">{configStatus.deploymentUrl || "localhost"}</Badge>
               </div>
             </div>
+          ) : (
+            <p>Failed to load environment information</p>
           )}
         </CardContent>
       </Card>
@@ -142,46 +164,88 @@ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
       <Card>
         <CardHeader>
           <CardTitle>Environment Variables</CardTitle>
-          <CardDescription>
-            Check if all required Salesforce credentials are configured (NEXT_PUBLIC_ prefixed)
-          </CardDescription>
+          <CardDescription>Server-side Salesforce credentials (secure, not exposed to client)</CardDescription>
         </CardHeader>
         <CardContent>
-          {configStatus ? (
+          {configLoading ? (
+            <p>Loading configuration status...</p>
+          ) : configStatus ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_INSTANCE_URL</span>
+                <span>SALESFORCE_INSTANCE_URL</span>
                 <div className="flex items-center gap-2">
                   {getStatusIcon(configStatus.hasInstanceUrl)}
                   {configStatus.instanceUrl && <Badge variant="outline">{configStatus.instanceUrl}</Badge>}
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_CLIENT_ID</span>
+                <span>SALESFORCE_CLIENT_ID</span>
                 {getStatusIcon(configStatus.hasClientId)}
               </div>
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET</span>
+                <span>SALESFORCE_CLIENT_SECRET</span>
                 {getStatusIcon(configStatus.hasClientSecret)}
               </div>
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_USERNAME</span>
+                <span>SALESFORCE_USERNAME</span>
                 {getStatusIcon(configStatus.hasUsername)}
               </div>
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_PASSWORD</span>
+                <span>SALESFORCE_PASSWORD</span>
                 {getStatusIcon(configStatus.hasPassword)}
               </div>
               <div className="flex items-center justify-between">
-                <span>NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN</span>
+                <span>SALESFORCE_SECURITY_TOKEN</span>
                 {getStatusIcon(configStatus.hasSecurityToken)}
               </div>
             </div>
           ) : (
-            <p>Loading configuration status...</p>
+            <p>Failed to load configuration status</p>
           )}
         </CardContent>
       </Card>
+
+      {/* Environment Variables Setup */}
+      {!allConfigured && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vercel Environment Variables Setup</CardTitle>
+            <CardDescription>Configure secure server-side Salesforce credentials</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Environment variables are missing. Add them to your Vercel project settings.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-2">
+              <h4 className="font-medium">Steps to Configure:</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                <li>Go to your Vercel project dashboard</li>
+                <li>Navigate to Settings → Environment Variables</li>
+                <li>Add each Salesforce environment variable (WITHOUT NEXT_PUBLIC_ prefix)</li>
+                <li>Set Environment to "Production" and "Preview"</li>
+                <li>Redeploy your application</li>
+              </ol>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={copyEnvTemplate} variant="outline" size="sm">
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Secure Environment Template
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <a href="https://vercel.com/dashboard" target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open Vercel Dashboard
+                </a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Connection Test */}
       <Card>
@@ -230,9 +294,9 @@ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here`
       {allConfigured && (
         <Card className="border-green-200 bg-green-50">
           <CardHeader>
-            <CardTitle className="text-green-800">🎉 Configuration Complete!</CardTitle>
+            <CardTitle className="text-green-800">🎉 Secure Configuration Complete!</CardTitle>
             <CardDescription className="text-green-700">
-              Your Salesforce environment variables are properly configured. You can now test the application.
+              Your Salesforce environment variables are properly configured with server-side security.
             </CardDescription>
           </CardHeader>
           <CardContent>
