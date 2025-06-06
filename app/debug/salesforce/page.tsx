@@ -1,100 +1,103 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, XCircle, AlertCircle, RefreshCw, Copy, ExternalLink } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import { getSalesforceConfigAction } from "@/app/actions/salesforce-config"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Settings, ExternalLink } from "lucide-react"
 
-interface ConfigStatus {
-  hasInstanceUrl: boolean
-  hasClientId: boolean
-  hasClientSecret: boolean
-  hasUsername: boolean
-  hasPassword: boolean
-  hasSecurityToken: boolean
-  instanceUrl?: string
-  environment?: string
-  vercelEnv?: string
-  deploymentUrl?: string
-}
-
-interface ConnectionTest {
-  success: boolean
+interface ConnectionResult {
+  connected: boolean
   error?: string
+  errorType?: string
   details?: any
 }
 
+interface EnvironmentStatus {
+  [key: string]: boolean
+}
+
 export default function SalesforceDebugPage() {
-  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
-  const [connectionTest, setConnectionTest] = useState<ConnectionTest | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [configLoading, setConfigLoading] = useState(true)
-  const { toast } = useToast()
-
-  useEffect(() => {
-    fetchConfigStatus()
-  }, [])
-
-  const fetchConfigStatus = async () => {
-    try {
-      setConfigLoading(true)
-      const result = await getSalesforceConfigAction()
-      if (result.success) {
-        setConfigStatus(result.data)
-      } else {
-        console.error("Failed to get config status:", result.error)
-      }
-    } catch (error) {
-      console.error("Error fetching config status:", error)
-    } finally {
-      setConfigLoading(false)
-    }
-  }
+  const [connectionResult, setConnectionResult] = useState<ConnectionResult | null>(null)
+  const [environmentStatus, setEnvironmentStatus] = useState<EnvironmentStatus>({})
+  const [isLoading, setIsLoading] = useState(false)
 
   const testConnection = async () => {
-    setLoading(true)
+    setIsLoading(true)
     try {
       const response = await fetch("/api/test-connection")
-      const data = await response.json()
-      setConnectionTest(data)
+      const result = await response.json()
+      setConnectionResult(result)
     } catch (error) {
-      setConnectionTest({
-        success: false,
+      setConnectionResult({
+        connected: false,
         error: error instanceof Error ? error.message : "Unknown error",
+        errorType: "FETCH_ERROR",
       })
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  const copyEnvTemplate = () => {
-    const template = `# Salesforce Configuration (Server-side only - SECURE)
-# Add these to Vercel Environment Variables WITHOUT NEXT_PUBLIC_ prefix
-SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
-SALESFORCE_CLIENT_ID=your_client_id_here
-SALESFORCE_CLIENT_SECRET=your_client_secret_here
-SALESFORCE_USERNAME=your_username_here
-SALESFORCE_PASSWORD=your_password_here
-SALESFORCE_SECURITY_TOKEN=your_security_token_here`
-
-    navigator.clipboard.writeText(template)
-    toast({
-      title: "Secure Environment Template Copied",
-      description: "These are server-side only variables (no NEXT_PUBLIC_ prefix)",
-    })
+  const checkEnvironment = async () => {
+    try {
+      const response = await fetch("/api/debug/environment")
+      const result = await response.json()
+      setEnvironmentStatus(result.environment || {})
+    } catch (error) {
+      console.error("Environment check failed:", error)
+    }
   }
 
-  const getStatusIcon = (status: boolean) => {
-    return status ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
+  useEffect(() => {
+    checkEnvironment()
+  }, [])
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
   }
 
-  const isProduction = configStatus?.environment === "production"
-  const isVercel = configStatus?.vercelEnv !== "not-vercel"
-  const allConfigured = configStatus && Object.values(configStatus).slice(0, 6).every(Boolean)
+  const getErrorSuggestions = (errorType?: string) => {
+    switch (errorType) {
+      case "URL_NOT_EXISTS":
+        return [
+          "Log into Salesforce manually and copy the URL from your browser",
+          "Check if your Salesforce org is active and accessible",
+          "Verify you're using the correct URL format for your org type",
+          "For Developer Edition: use https://yourcompany-dev-ed.my.salesforce.com",
+          "For Sandbox: use https://yourcompany--sandbox.my.salesforce.com",
+        ]
+      case "INVALID_URL_FORMAT":
+        return [
+          "Use the format: https://yourcompany.my.salesforce.com",
+          "Remove any trailing slashes from the URL",
+          "Ensure the URL starts with https://",
+          "Check for typos in the domain name",
+        ]
+      case "INVALID_CREDENTIALS":
+        return [
+          "Verify your username and password are correct",
+          "Reset your security token and append it to your password",
+          "Check if your user account is active in Salesforce",
+          "Ensure you have API access enabled",
+        ]
+      case "INVALID_CLIENT_ID":
+        return [
+          "Verify your Connected App Consumer Key (Client ID)",
+          "Check if the Connected App is approved and active",
+          "Ensure the Connected App has the correct OAuth settings",
+        ]
+      default:
+        return [
+          "Check all environment variables are set correctly",
+          "Verify your Salesforce credentials",
+          "Test logging into Salesforce manually",
+          "Check the Salesforce trust status at trust.salesforce.com",
+        ]
+    }
+  }
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -103,149 +106,55 @@ SALESFORCE_SECURITY_TOKEN=your_security_token_here`
           <h1 className="text-3xl font-bold">Salesforce Configuration Debug</h1>
           <p className="text-muted-foreground">Check your secure Salesforce integration status</p>
         </div>
-        <Button onClick={fetchConfigStatus} variant="outline" disabled={configLoading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${configLoading ? "animate-spin" : ""}`} />
+        <Button onClick={() => window.location.reload()} variant="outline">
+          <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
         </Button>
       </div>
 
       {/* Security Notice */}
-      <Alert className="border-blue-200 bg-blue-50">
-        <AlertCircle className="h-4 w-4 text-blue-600" />
-        <AlertDescription className="text-blue-800">
-          🔒 <strong>Secure Configuration:</strong> All Salesforce credentials are server-side only and not exposed to
+      <Alert>
+        <Settings className="h-4 w-4" />
+        <AlertDescription>
+          <strong>🔒 Secure Configuration:</strong> All Salesforce credentials are server-side only and not exposed to
           the client browser.
         </AlertDescription>
       </Alert>
 
-      {/* Configuration Status Alert */}
-      {configStatus && (
-        <Alert className={allConfigured ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
-          <AlertCircle className={`h-4 w-4 ${allConfigured ? "text-green-600" : "text-red-600"}`} />
-          <AlertDescription className={allConfigured ? "text-green-800" : "text-red-800"}>
-            {allConfigured
-              ? "✅ All Salesforce environment variables are configured correctly!"
-              : "❌ Some Salesforce environment variables are missing. Check the configuration below."}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Deployment Environment Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Deployment Environment</CardTitle>
-          <CardDescription>Current deployment and environment information</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {configLoading ? (
-            <p>Loading environment information...</p>
-          ) : configStatus ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span>Environment</span>
-                <Badge variant={isProduction ? "default" : "secondary"}>{configStatus.environment || "unknown"}</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Platform</span>
-                <Badge variant={isVercel ? "default" : "secondary"}>{isVercel ? "Vercel" : "Local/Other"}</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Deployment URL</span>
-                <Badge variant="outline">{configStatus.deploymentUrl || "localhost"}</Badge>
-              </div>
-            </div>
-          ) : (
-            <p>Failed to load environment information</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Configuration Status */}
+      {/* Environment Variables Check */}
       <Card>
         <CardHeader>
           <CardTitle>Environment Variables</CardTitle>
           <CardDescription>Server-side Salesforce credentials (secure, not exposed to client)</CardDescription>
         </CardHeader>
         <CardContent>
-          {configLoading ? (
-            <p>Loading configuration status...</p>
-          ) : configStatus ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_INSTANCE_URL</span>
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(configStatus.hasInstanceUrl)}
-                  {configStatus.instanceUrl && <Badge variant="outline">{configStatus.instanceUrl}</Badge>}
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              "SALESFORCE_INSTANCE_URL",
+              "SALESFORCE_CLIENT_ID",
+              "SALESFORCE_CLIENT_SECRET",
+              "SALESFORCE_USERNAME",
+              "SALESFORCE_PASSWORD",
+              "SALESFORCE_SECURITY_TOKEN",
+            ].map((envVar) => (
+              <div key={envVar} className="flex items-center justify-between p-3 border rounded-lg">
+                <span className="font-medium text-sm">{envVar}</span>
+                {environmentStatus[envVar] ? (
+                  <Badge variant="default" className="bg-green-100 text-green-800">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Configured
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive">
+                    <XCircle className="w-3 h-3 mr-1" />
+                    Not configured
+                  </Badge>
+                )}
               </div>
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_CLIENT_ID</span>
-                {getStatusIcon(configStatus.hasClientId)}
-              </div>
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_CLIENT_SECRET</span>
-                {getStatusIcon(configStatus.hasClientSecret)}
-              </div>
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_USERNAME</span>
-                {getStatusIcon(configStatus.hasUsername)}
-              </div>
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_PASSWORD</span>
-                {getStatusIcon(configStatus.hasPassword)}
-              </div>
-              <div className="flex items-center justify-between">
-                <span>SALESFORCE_SECURITY_TOKEN</span>
-                {getStatusIcon(configStatus.hasSecurityToken)}
-              </div>
-            </div>
-          ) : (
-            <p>Failed to load configuration status</p>
-          )}
+            ))}
+          </div>
         </CardContent>
       </Card>
-
-      {/* Environment Variables Setup */}
-      {!allConfigured && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Vercel Environment Variables Setup</CardTitle>
-            <CardDescription>Configure secure server-side Salesforce credentials</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Environment variables are missing. Add them to your Vercel project settings.
-              </AlertDescription>
-            </Alert>
-
-            <div className="space-y-2">
-              <h4 className="font-medium">Steps to Configure:</h4>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                <li>Go to your Vercel project dashboard</li>
-                <li>Navigate to Settings → Environment Variables</li>
-                <li>Add each Salesforce environment variable (WITHOUT NEXT_PUBLIC_ prefix)</li>
-                <li>Set Environment to "Production" and "Preview"</li>
-                <li>Redeploy your application</li>
-              </ol>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={copyEnvTemplate} variant="outline" size="sm">
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Secure Environment Template
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <a href="https://vercel.com/dashboard" target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Open Vercel Dashboard
-                </a>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Connection Test */}
       <Card>
@@ -253,67 +162,98 @@ SALESFORCE_SECURITY_TOKEN=your_security_token_here`
           <CardTitle>Connection Test</CardTitle>
           <CardDescription>Test the actual connection to Salesforce</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <Button onClick={testConnection} disabled={loading || !allConfigured}>
-              {loading ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                "Test Connection"
-              )}
-            </Button>
-
-            {connectionTest && (
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  {connectionTest.success ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500" />
-                  )}
-                  <span className="font-medium">
-                    {connectionTest.success ? "Connection Successful" : "Connection Failed"}
-                  </span>
-                </div>
-                {connectionTest.error && <p className="text-sm text-red-600 mt-2">{connectionTest.error}</p>}
-                {connectionTest.details && (
-                  <pre className="text-xs bg-gray-100 p-2 rounded mt-2 overflow-auto">
-                    {JSON.stringify(connectionTest.details, null, 2)}
-                  </pre>
-                )}
-              </div>
+        <CardContent className="space-y-4">
+          <Button onClick={testConnection} disabled={isLoading} className="w-full md:w-auto">
+            {isLoading ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Testing Connection...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Test Connection
+              </>
             )}
-          </div>
+          </Button>
+
+          {connectionResult && (
+            <Tabs defaultValue="result" className="w-full">
+              <TabsList>
+                <TabsTrigger value="result">Result</TabsTrigger>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="result" className="space-y-4">
+                <Alert variant={connectionResult.connected ? "default" : "destructive"}>
+                  {connectionResult.connected ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                  <AlertDescription>
+                    {connectionResult.connected
+                      ? "✅ Connection successful! Salesforce API is accessible."
+                      : `❌ Connection failed: ${connectionResult.error}`}
+                  </AlertDescription>
+                </Alert>
+
+                {connectionResult.errorType && (
+                  <div className="p-3 bg-muted rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      <span className="font-medium">Error Type: {connectionResult.errorType}</span>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="details" className="space-y-4">
+                {connectionResult.details && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-muted rounded-lg">
+                      <h4 className="font-medium mb-2">Technical Details</h4>
+                      <pre className="text-xs overflow-auto whitespace-pre-wrap max-h-64">
+                        {JSON.stringify(connectionResult.details, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="suggestions" className="space-y-4">
+                <div className="space-y-3">
+                  <h4 className="font-medium">Troubleshooting Steps:</h4>
+                  {getErrorSuggestions(connectionResult.errorType).map((suggestion, index) => (
+                    <div key={index} className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg">
+                      <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">
+                        {index + 1}
+                      </span>
+                      <span className="text-sm">{suggestion}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button variant="outline" asChild>
+                    <a href="/debug/url-validator" className="flex items-center gap-2">
+                      <ExternalLink className="h-4 w-4" />
+                      URL Validator
+                    </a>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="/debug/environment" className="flex items-center gap-2">
+                      <Settings className="h-4 w-4" />
+                      Environment Debug
+                    </a>
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
         </CardContent>
       </Card>
-
-      {/* Success Message */}
-      {allConfigured && (
-        <Card className="border-green-200 bg-green-50">
-          <CardHeader>
-            <CardTitle className="text-green-800">🎉 Secure Configuration Complete!</CardTitle>
-            <CardDescription className="text-green-700">
-              Your Salesforce environment variables are properly configured with server-side security.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Button asChild variant="default" size="sm">
-                <a href="/customers">Test Customer Data</a>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <a href="/inventory">Test Inventory Data</a>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <a href="/inventory/alerts">Test Alerts Data</a>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
