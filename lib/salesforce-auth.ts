@@ -5,6 +5,14 @@ interface SalesforceAuthResult {
   error?: string
 }
 
+// Add this enhanced logging function at the top of the file
+function logAuthAttempt(step: string, details: any) {
+  console.log(`🔐 Salesforce Auth - ${step}:`, {
+    timestamp: new Date().toISOString(),
+    ...details,
+  })
+}
+
 export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
   try {
     const instanceUrl = process.env.SALESFORCE_INSTANCE_URL
@@ -16,10 +24,23 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
 
     // Check if we have all required credentials
     if (!instanceUrl || !clientId || !clientSecret || !username || !password) {
-      console.log("Missing Salesforce credentials")
+      const missingCreds = {
+        instanceUrl: !instanceUrl,
+        clientId: !clientId,
+        clientSecret: !clientSecret,
+        username: !username,
+        password: !password,
+        securityToken: !securityToken,
+      }
+
+      logAuthAttempt("Missing Credentials", missingCreds)
+
       return {
         success: false,
-        error: "Missing Salesforce configuration. Please check environment variables.",
+        error: `Missing Salesforce configuration: ${Object.entries(missingCreds)
+          .filter(([_, missing]) => missing)
+          .map(([key, _]) => key)
+          .join(", ")}`,
       }
     }
 
@@ -68,6 +89,13 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
 
     console.log("Using login URL:", loginUrl)
     console.log("For instance:", normalizedInstanceUrl)
+
+    // Add logging before the fetch request:
+    logAuthAttempt("Attempting Authentication", {
+      loginUrl,
+      instanceUrl: normalizedInstanceUrl,
+      username: username.substring(0, 3) + "***", // Partial username for security
+    })
 
     // Get access token
     const tokenUrl = `${loginUrl}/services/oauth2/token`
