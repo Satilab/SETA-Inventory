@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Settings, ExternalLink } from "lucide-react"
+import { SalesforceUrlFixer } from "@/components/salesforce-url-fixer"
 
 interface ConnectionResult {
   connected: boolean
@@ -120,6 +121,17 @@ export default function SalesforceDebugPage() {
           the client browser.
         </AlertDescription>
       </Alert>
+
+      {/* URL Fixer - Show if we detect URL issues */}
+      {connectionResult && connectionResult.errorType === "URL_NOT_EXISTS" && (
+        <SalesforceUrlFixer
+          currentUrl={process.env.NEXT_PUBLIC_SALESFORCE_INSTANCE_URL || "Not set"}
+          onUrlFixed={(newUrl) => {
+            // Show instructions for updating environment variable
+            alert(`Copy this URL and update your SALESFORCE_INSTANCE_URL environment variable in Vercel: ${newUrl}`)
+          }}
+        />
+      )}
 
       {/* Environment Variables Check */}
       <Card>
