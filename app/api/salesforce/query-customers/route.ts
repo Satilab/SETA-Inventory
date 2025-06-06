@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSalesforceToken } from "@/lib/salesforce-auth"
+import { makeSalesforceRequest } from "@/lib/salesforce-auth"
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,32 +23,6 @@ export async function GET(request: NextRequest) {
         },
       })
     }
-
-    // Get Salesforce authentication token
-    console.log("🔐 Authenticating with Salesforce...")
-    const authResult = await getSalesforceToken()
-
-    if (!authResult.success || !authResult.access_token) {
-      console.log("❌ Salesforce authentication failed:", authResult.error)
-      return NextResponse.json({
-        success: false,
-        records: [],
-        totalSize: 0,
-        done: true,
-        message: "Salesforce authentication failed",
-        salesforceError: authResult.error,
-        troubleshooting: {
-          suggestion: "Check your Salesforce credentials and instance URL",
-          expectedFormat: "https://yourinstance.my.salesforce.com",
-          currentUrl: instanceUrl?.substring(0, 50) + "...",
-        },
-      })
-    }
-
-    console.log("✅ Salesforce authentication successful")
-
-    // Use the instance URL from the auth response
-    const apiUrl = authResult.instance_url
 
     // Get URL parameters for customization
     const searchParams = request.nextUrl.searchParams
@@ -141,31 +115,11 @@ export async function GET(request: NextRequest) {
         console.log(`🔍 Trying ${queryConfig.name} object...`)
         objectsChecked.push(queryConfig.name)
 
-        const queryResponse = await fetch(
-          `${apiUrl}/services/data/v58.0/query?q=${encodeURIComponent(queryConfig.query)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${authResult.access_token}`,
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-          },
+        // Use the centralized API request function
+        const result = await makeSalesforceRequest(
+          `/services/data/v58.0/query?q=${encodeURIComponent(queryConfig.query)}`,
         )
 
-        console.log(`Query response status for ${queryConfig.name}:`, queryResponse.status)
-
-        if (!queryResponse.ok) {
-          const errorText = await queryResponse.text()
-          console.log(`❌ ${queryConfig.name} query failed:`, errorText.substring(0, 200))
-          objectErrors[queryConfig.name] = {
-            status: queryResponse.status,
-            error: errorText.substring(0, 200),
-          }
-          continue
-        }
-
-        const result = await queryResponse.json()
         queryResults.push({
           object: queryConfig.name,
           recordCount: result.records?.length || 0,
@@ -294,7 +248,6 @@ export async function GET(request: NextRequest) {
         salesforceInfo: {
           objectUsed: objectUsed,
           queryUsed: queryUsed,
-          instanceUrl: apiUrl,
           recordCount: normalizedRecords.length,
           fieldsReturned: [
             "Name",
@@ -320,7 +273,6 @@ export async function GET(request: NextRequest) {
       message: "No customer records found in Salesforce",
       salesforceInfo: {
         objectsChecked: objectsChecked,
-        instanceUrl: apiUrl,
         authenticationStatus: "Success",
         queryResults: queryResults,
         objectErrors: objectErrors,

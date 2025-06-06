@@ -23,6 +23,16 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
     const password = process.env.SALESFORCE_PASSWORD
     const securityToken = process.env.SALESFORCE_SECURITY_TOKEN || ""
 
+    logAuthAttempt("Starting Authentication", {
+      hasInstanceUrl: Boolean(instanceUrl),
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+      hasUsername: Boolean(username),
+      hasPassword: Boolean(password),
+      hasSecurityToken: Boolean(securityToken),
+      instanceUrl: instanceUrl?.substring(0, 30) + "..." || "Not set",
+    })
+
     // Check if we have all required credentials
     if (!instanceUrl || !clientId || !clientSecret || !username || !password) {
       const missingCreds = {
@@ -119,7 +129,7 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       password: password + securityToken,
     })
 
-    console.log("Attempting Salesforce authentication to:", tokenUrl)
+    console.log("🔐 Attempting Salesforce authentication to:", tokenUrl)
 
     const response = await fetch(tokenUrl, {
       method: "POST",
@@ -131,11 +141,11 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       body: params.toString(),
     })
 
-    console.log("Auth response status:", response.status, response.statusText)
+    console.log("🔐 Auth response status:", response.status, response.statusText)
 
     // Always get response as text first
     const responseText = await response.text()
-    console.log("Auth response (first 300 chars):", responseText.substring(0, 300))
+    console.log("🔐 Auth response (first 300 chars):", responseText.substring(0, 300))
 
     // Check if response is HTML (error page)
     const isHtmlResponse =
@@ -231,6 +241,11 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       }
 
       console.log("✅ Salesforce authentication successful")
+      logAuthAttempt("Authentication Success", {
+        instanceUrl: data.instance_url,
+        tokenLength: data.access_token?.length || 0,
+      })
+
       return {
         success: true,
         access_token: data.access_token,
@@ -257,5 +272,52 @@ export async function getSalesforceToken(): Promise<SalesforceAuthResult> {
       error: error instanceof Error ? error.message : "Unknown authentication error",
       details: { error },
     }
+  }
+}
+
+// Helper function to make authenticated Salesforce API calls
+export async function makeSalesforceRequest(endpoint: string, options: RequestInit = {}) {
+  try {
+    console.log(`🔍 Making Salesforce API request to: ${endpoint}`)
+
+    const authResult = await getSalesforceToken()
+
+    if (!authResult.success || !authResult.access_token) {
+      console.log("❌ Authentication failed for API request:", authResult.error)
+      throw new Error(`Salesforce authentication failed: ${authResult.error}`)
+    }
+
+    const apiUrl = authResult.instance_url
+    const fullUrl = `${apiUrl}${endpoint}`
+
+    console.log(`🔍 Full API URL: ${fullUrl}`)
+
+    const response = await fetch(fullUrl, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${authResult.access_token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...options.headers,
+      },
+    })
+
+    console.log(`🔍 API response status: ${response.status} ${response.statusText}`)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.log(`❌ API request failed: ${errorText.substring(0, 200)}`)
+      throw new Error(
+        `Salesforce API request failed: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
+      )
+    }
+
+    const data = await response.json()
+    console.log(`✅ API request successful, returned ${data.records?.length || "unknown"} records`)
+
+    return data
+  } catch (error) {
+    console.error("❌ Salesforce API request error:", error)
+    throw error
   }
 }
