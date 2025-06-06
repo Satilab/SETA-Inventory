@@ -9,43 +9,42 @@ When deploying to Vercel, you need to configure the Salesforce environment varia
 Add these environment variables in your Vercel project dashboard:
 
 \`\`\`bash
-# Salesforce Configuration (Server-side only)
-SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
-SALESFORCE_CLIENT_ID=your_client_id_here
-SALESFORCE_CLIENT_SECRET=your_client_secret_here
-SALESFORCE_USERNAME=your_username_here
-SALESFORCE_PASSWORD=your_password_here
-SALESFORCE_SECURITY_TOKEN=your_security_token_here
+# Salesforce Configuration (Client-side accessible for this app)
+NEXT_PUBLIC_SALESFORCE_INSTANCE_URL=https://your-instance.my.salesforce.com
+NEXT_PUBLIC_SALESFORCE_CLIENT_ID=your_client_id_here
+NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET=your_client_secret_here
+NEXT_PUBLIC_SALESFORCE_USERNAME=your_username_here
+NEXT_PUBLIC_SALESFORCE_PASSWORD=your_password_here
+NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN=your_security_token_here
 \`\`\`
+
+### ✅ Your Current Configuration
+
+Based on your Vercel settings, you have correctly configured:
+- ✅ NEXT_PUBLIC_SALESFORCE_INSTANCE_URL
+- ✅ NEXT_PUBLIC_SALESFORCE_CLIENT_ID
+- ✅ NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET
+- ✅ NEXT_PUBLIC_SALESFORCE_USERNAME
+- ✅ NEXT_PUBLIC_SALESFORCE_PASSWORD
+- ✅ NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN
 
 ### 🔧 Vercel Deployment Steps
 
-1. **Deploy to Vercel**:
-   \`\`\`bash
-   # Deploy using Vercel CLI
-   vercel --prod
-   
-   # Or connect your GitHub repo to Vercel
-   \`\`\`
+1. **Environment Variables** (✅ Already Done):
+   - Your environment variables are correctly configured in Vercel
+   - All 6 required variables are present with NEXT_PUBLIC_ prefix
 
-2. **Add Environment Variables**:
-   - Go to your Vercel project dashboard
-   - Navigate to Settings → Environment Variables
-   - Add each Salesforce variable listed above
-   - Set Environment to "Production" and "Preview"
-
-3. **Redeploy**:
-   - After adding environment variables, redeploy your app
+2. **Redeploy**:
+   - After updating the code, redeploy your app
    - Go to Deployments tab and click "Redeploy"
 
 ### 🔍 Troubleshooting
 
 **Common Issues:**
 
-1. **"Salesforce not configured"**
-   - ✅ Check all 6 environment variables are set in Vercel
-   - ✅ Ensure no typos in variable names
-   - ✅ Verify values don't have extra spaces
+1. **"Salesforce not configured"** (✅ Should be fixed now)
+   - Code now uses NEXT_PUBLIC_ prefixed environment variables
+   - Matches your Vercel configuration
 
 2. **"Authentication Failed"**
    - ✅ Check your Salesforce credentials
@@ -66,10 +65,17 @@ After deployment, test these URLs:
 
 ### 🔐 Security Notes
 
-- Environment variables are server-side only
-- Never expose Salesforce credentials in client-side code
+- Environment variables use NEXT_PUBLIC_ prefix for this application
+- Credentials are accessible in the browser (consider server-side only for production)
 - Use Vercel's secure environment variable storage
 - Rotate security tokens periodically
+
+### 🚀 Next Steps
+
+1. Redeploy your application (code has been updated)
+2. Test the connection at `/debug/salesforce`
+3. Verify customer data loads at `/customers`
+4. Check inventory data at `/inventory`
 \`\`\`
 
-Now let's improve the environment variable detection:
+Let's also update the debug page to show the correct environment variable names:

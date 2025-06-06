@@ -1,11 +1,11 @@
 // Server-side only Salesforce configuration
 export const salesforceConfig = {
-  instanceUrl: process.env.SALESFORCE_INSTANCE_URL || "",
-  clientId: process.env.SALESFORCE_CLIENT_ID || "",
-  clientSecret: process.env.SALESFORCE_CLIENT_SECRET || "",
-  username: process.env.SALESFORCE_USERNAME || "",
-  password: process.env.SALESFORCE_PASSWORD || "",
-  securityToken: process.env.SALESFORCE_SECURITY_TOKEN || "",
+  instanceUrl: process.env.NEXT_PUBLIC_SALESFORCE_INSTANCE_URL || "",
+  clientId: process.env.NEXT_PUBLIC_SALESFORCE_CLIENT_ID || "",
+  clientSecret: process.env.NEXT_PUBLIC_SALESFORCE_CLIENT_SECRET || "",
+  username: process.env.NEXT_PUBLIC_SALESFORCE_USERNAME || "",
+  password: process.env.NEXT_PUBLIC_SALESFORCE_PASSWORD || "",
+  securityToken: process.env.NEXT_PUBLIC_SALESFORCE_SECURITY_TOKEN || "",
 }
 
 // Helper function to check if Salesforce is properly configured (server-side only)
@@ -30,6 +30,7 @@ export function isSalesforceConfigured(): boolean {
     isConfigured,
     environment: process.env.NODE_ENV,
     vercelEnv: process.env.VERCEL_ENV,
+    instanceUrl: config.instanceUrl?.substring(0, 50) + "..." || "Not configured",
   })
 
   return isConfigured
