@@ -3,6 +3,7 @@ interface UrlValidationResult {
   correctedUrl?: string
   error?: string
   suggestions: string[]
+  errorType?: string
 }
 
 export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult {
@@ -10,6 +11,7 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
     return {
       isValid: false,
       error: "Instance URL is required",
+      errorType: "MISSING_URL",
       suggestions: [
         "https://yourcompany.my.salesforce.com",
         "https://yourcompany--sandbox.my.salesforce.com",
@@ -26,77 +28,104 @@ export function validateSalesforceUrl(instanceUrl: string): UrlValidationResult 
     cleanUrl = cleanUrl.slice(0, -1)
   }
 
+  // Remove query parameters (like ?locale=in)
+  if (cleanUrl.includes("?")) {
+    cleanUrl = cleanUrl.split("?")[0]
+  }
+
   // Add https:// if missing
   if (!cleanUrl.startsWith("http")) {
     cleanUrl = "https://" + cleanUrl
   }
 
-  // Common URL patterns and their corrections
-  const urlPatterns = [
+  // Check for common incorrect URLs
+  const incorrectPatterns = [
     {
-      // Standard production org
-      pattern: /^https:\/\/([a-zA-Z0-9-]+)\.my\.salesforce\.com$/,
-      isValid: true,
-      type: "Production",
+      pattern: /^https:\/\/login\.salesforce\.com/,
+      error: "You're using the login endpoint, not your instance URL",
+      errorType: "LOGIN_ENDPOINT_ERROR",
+      suggestion: "Replace with your actual Salesforce instance URL like: https://yourcompany.my.salesforce.com",
     },
     {
-      // Sandbox org
-      pattern: /^https:\/\/([a-zA-Z0-9-]+)--([a-zA-Z0-9-]+)\.my\.salesforce\.com$/,
-      isValid: true,
-      type: "Sandbox",
+      pattern: /^https:\/\/test\.salesforce\.com/,
+      error: "You're using the test login endpoint, not your instance URL",
+      errorType: "TEST_ENDPOINT_ERROR",
+      suggestion:
+        "Replace with your actual Salesforce instance URL like: https://yourcompany--sandbox.my.salesforce.com",
     },
     {
-      // Developer org
-      pattern: /^https:\/\/([a-zA-Z0-9-]+)-dev-ed\.my\.salesforce\.com$/,
-      isValid: true,
-      type: "Developer",
-    },
-    {
-      // Trailhead Playground
-      pattern: /^https:\/\/([a-zA-Z0-9-]+)-dev-ed\.lightning\.force\.com$/,
-      isValid: true,
-      type: "Trailhead Playground",
-    },
-    {
-      // Legacy format (needs correction)
       pattern: /^https:\/\/([a-zA-Z0-9-]+)\.salesforce\.com$/,
-      isValid: false,
-      correction: (match: RegExpMatchArray) => `https://${match[1]}.my.salesforce.com`,
-      type: "Legacy (needs correction)",
+      error: "Old URL format detected",
+      errorType: "LEGACY_FORMAT",
+      suggestion: "Update to new format: https://$1.my.salesforce.com",
     },
   ]
 
-  for (const pattern of urlPatterns) {
-    const match = cleanUrl.match(pattern.pattern)
+  // Check for incorrect patterns first
+  for (const incorrectPattern of incorrectPatterns) {
+    const match = cleanUrl.match(incorrectPattern.pattern)
     if (match) {
-      if (pattern.isValid) {
-        return {
-          isValid: true,
-          correctedUrl: cleanUrl,
-          suggestions: [],
-        }
-      } else if (pattern.correction) {
-        return {
-          isValid: false,
-          correctedUrl: pattern.correction(match),
-          error: `URL format is outdated. Use the corrected format.`,
-          suggestions: [pattern.correction(match)],
-        }
+      let correctedUrl = incorrectPattern.suggestion
+      if (incorrectPattern.suggestion.includes("$1") && match[1]) {
+        correctedUrl = incorrectPattern.suggestion.replace("$1", match[1])
+      }
+
+      return {
+        isValid: false,
+        error: incorrectPattern.error,
+        errorType: incorrectPattern.errorType,
+        correctedUrl: correctedUrl.startsWith("https://") ? correctedUrl : undefined,
+        suggestions: [
+          "Log into Salesforce and copy the URL from your browser address bar",
+          "Look for URLs like: https://yourcompany.my.salesforce.com",
+          "For Developer Edition: https://yourcompany-dev-ed.my.salesforce.com",
+          "For Sandbox: https://yourcompany--sandbox.my.salesforce.com",
+        ],
+      }
+    }
+  }
+
+  // Valid URL patterns
+  const validPatterns = [
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+\.my\.salesforce\.com$/,
+      type: "Production",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+--[a-zA-Z0-9-]+\.my\.salesforce\.com$/,
+      type: "Sandbox",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.my\.salesforce\.com$/,
+      type: "Developer Edition",
+    },
+    {
+      pattern: /^https:\/\/[a-zA-Z0-9-]+-dev-ed\.lightning\.force\.com$/,
+      type: "Trailhead Playground",
+    },
+  ]
+
+  // Check for valid patterns
+  for (const validPattern of validPatterns) {
+    if (validPattern.pattern.test(cleanUrl)) {
+      return {
+        isValid: true,
+        correctedUrl: cleanUrl,
+        suggestions: [],
       }
     }
   }
 
   // If no pattern matches, provide suggestions
-  const domain = cleanUrl.replace(/^https?:\/\//, "").split(".")[0]
-
   return {
     isValid: false,
     error: "Invalid Salesforce URL format",
+    errorType: "INVALID_FORMAT",
     suggestions: [
-      `https://${domain}.my.salesforce.com`,
-      `https://${domain}--sandbox.my.salesforce.com`,
-      `https://${domain}-dev-ed.my.salesforce.com`,
-      `https://${domain}-dev-ed.lightning.force.com`,
+      "https://yourcompany.my.salesforce.com (Production)",
+      "https://yourcompany--sandbox.my.salesforce.com (Sandbox)",
+      "https://yourcompany-dev-ed.my.salesforce.com (Developer Edition)",
+      "https://yourcompany-dev-ed.lightning.force.com (Trailhead)",
     ],
   }
 }

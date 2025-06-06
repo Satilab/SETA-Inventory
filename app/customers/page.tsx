@@ -1,15 +1,13 @@
 "use client"
 
+import { useEffect } from "react"
+
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { useSalesforceCustomers } from "@/hooks/use-salesforce-customers"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CustomerDetailsDialog } from "@/components/customer-details-dialog"
 import {
   Phone,
@@ -23,32 +21,56 @@ import {
   Settings,
   ExternalLink,
   Mail,
+  AlertCircle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+
+interface Customer {
+  Id: string
+  Name: string
+  Customer_Email__c?: string
+  Phone_Number__c?: string
+  Quote_Date__c?: string
+  reason__c?: string
+  Total_amount__c?: number
+  SourceObject?: string
+}
 
 export default function CustomersPage() {
-  const { data: customers, loading, error, refetch, lastUpdated, salesforceInfo, hasData } = useSalesforceCustomers()
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("all")
+  const [salesforceInfo, setSalesforceInfo] = useState<any>(null)
+  const [lastUpdated, setLastUpdated] = useState<string>("")
+  const [customObject, setCustomObject] = useState("")
+  const [customFields, setCustomFields] = useState("")
+  const [showCustomQuery, setShowCustomQuery] = useState(false)
   const { toast } = useToast()
 
   // Safe getter functions for your specific fields
-  const getName = (customer: any): string => {
+  const getName = (customer: Customer): string => {
     return customer?.Name || "Unknown Customer"
   }
 
-  const getCustomerEmail = (customer: any): string => {
+  const getCustomerEmail = (customer: Customer): string => {
     return customer?.Customer_Email__c || ""
   }
 
-  const getPhoneNumber = (customer: any): string => {
+  const getPhoneNumber = (customer: Customer): string => {
     return customer?.Phone_Number__c || ""
   }
 
-  const getQuoteDate = (customer: any): string => {
+  const getQuoteDate = (customer: Customer): string => {
     if (!customer?.Quote_Date__c) return ""
     try {
       return new Date(customer.Quote_Date__c).toLocaleDateString("en-IN")
@@ -57,13 +79,105 @@ export default function CustomersPage() {
     }
   }
 
-  const getReason = (customer: any): string => {
+  const getReason = (customer: Customer): string => {
     return customer?.reason__c || ""
   }
 
-  const getTotalAmount = (customer: any): number => {
+  const getTotalAmount = (customer: Customer): number => {
     return customer?.Total_amount__c || 0
   }
+
+  const fetchCustomers = async (params = {}) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Build query parameters
+      const queryParams = new URLSearchParams()
+      if (customObject && showCustomQuery) {
+        queryParams.set("object", customObject)
+      }
+      if (customFields && showCustomQuery) {
+        queryParams.set("fields", customFields)
+      }
+
+      // Add any additional params
+      Object.entries(params).forEach(([key, value]) => {
+        queryParams.set(key, String(value))
+      })
+
+      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : ""
+
+      console.log("🔍 Fetching customers from Salesforce API...")
+      console.log("Query params:", queryString)
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
+
+      const response = await fetch(`/api/salesforce/query-customers${queryString}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      })
+
+      clearTimeout(timeoutId)
+
+      console.log("Salesforce API response status:", response.status)
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log("Salesforce API response:", data)
+
+      if (data.success && data.records && data.records.length > 0) {
+        // Successfully got Salesforce data
+        setCustomers(data.records)
+        setLastUpdated(data.lastUpdated || new Date().toISOString())
+        setSalesforceInfo(data.salesforceInfo)
+        setError(null)
+
+        toast({
+          title: "Salesforce Data Loaded",
+          description: `Successfully loaded ${data.records.length} customers from ${data.salesforceInfo?.objectUsed || "Salesforce"}.`,
+          variant: "default",
+        })
+      } else {
+        // No Salesforce data available - show empty state
+        setCustomers([])
+        setError(data.message || "No customer records found")
+        setSalesforceInfo(data.salesforceInfo)
+
+        toast({
+          title: "No Customer Data",
+          description: data.message || "No customer records found in Salesforce.",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error("Error fetching Salesforce customers:", err)
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred"
+      setError(errorMessage)
+      setCustomers([]) // Clear any existing data
+      setSalesforceInfo(null)
+
+      toast({
+        title: "Salesforce Connection Failed",
+        description: `Could not connect to Salesforce: ${errorMessage}`,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    // Initial fetch
+    fetchCustomers()
+  }, [])
 
   // Filter customers based on search term
   const filteredCustomers = customers.filter((customer) => {
@@ -161,8 +275,18 @@ export default function CustomersPage() {
     return "Low Value"
   }
 
+  // Common Salesforce objects that might contain customer data
+  const commonObjects = [
+    { value: "Account", label: "Account" },
+    { value: "Contact", label: "Contact" },
+    { value: "Lead", label: "Lead" },
+    { value: "Opportunity", label: "Opportunity" },
+    { value: "Customer__c", label: "Customer__c (Custom)" },
+    { value: "Client__c", label: "Client__c (Custom)" },
+  ]
+
   // Show empty state when no data and not loading
-  if (!loading && !hasData && error) {
+  if (!loading && customers.length === 0 && error) {
     return (
       <div className="container mx-auto p-6 space-y-6">
         {/* Header */}
@@ -175,7 +299,7 @@ export default function CustomersPage() {
             <p className="text-muted-foreground">Manage your electrical trade customers from Salesforce</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={refetch} variant="outline" size="sm" disabled={loading}>
+            <Button onClick={() => fetchCustomers()} variant="outline" size="sm" disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               Retry Connection
             </Button>
@@ -224,7 +348,7 @@ export default function CustomersPage() {
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={refetch} disabled={loading}>
+              <Button onClick={() => fetchCustomers()} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
                 Retry Connection
               </Button>
@@ -242,7 +366,7 @@ export default function CustomersPage() {
   }
 
   // Show empty state when no data but no error (successful connection but no records)
-  if (!loading && !hasData && !error) {
+  if (!loading && customers.length === 0 && !error) {
     return (
       <div className="container mx-auto p-6 space-y-6">
         {/* Header */}
@@ -255,19 +379,26 @@ export default function CustomersPage() {
             <p className="text-muted-foreground">Manage your electrical trade customers from Salesforce</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={refetch} variant="outline" size="sm" disabled={loading}>
+            <Button onClick={() => fetchCustomers()} variant="outline" size="sm" disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               Refresh
+            </Button>
+            <Button onClick={() => setShowCustomQuery(!showCustomQuery)} variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" />
+              {showCustomQuery ? "Hide Custom Query" : "Custom Query"}
             </Button>
           </div>
         </div>
 
         {/* Connection Status */}
         <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
-              <CardTitle className="text-green-700">Connected to Salesforce</CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span className="text-green-700">Connected to Salesforce</span>
+              </CardTitle>
+              {salesforceInfo && <Badge variant="outline">{salesforceInfo.instanceUrl}</Badge>}
             </div>
           </CardHeader>
           <CardContent>
@@ -282,6 +413,64 @@ export default function CustomersPage() {
           </CardContent>
         </Card>
 
+        {/* Custom Query Form */}
+        {showCustomQuery && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Custom Object Query
+              </CardTitle>
+              <CardDescription>Specify a custom Salesforce object to query for customer data</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="customObject">Salesforce Object</Label>
+                    <Select value={customObject} onValueChange={setCustomObject}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an object" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {commonObjects.map((obj) => (
+                          <SelectItem key={obj.value} value={obj.value}>
+                            {obj.label}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="custom">Other (specify)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {customObject === "custom" && (
+                      <Input
+                        placeholder="Enter object name (e.g. Customer__c)"
+                        className="mt-2"
+                        onChange={(e) => setCustomObject(e.target.value)}
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="customFields">Fields (optional)</Label>
+                    <Input
+                      id="customFields"
+                      placeholder="Id, Name, Email__c, Phone__c"
+                      value={customFields}
+                      onChange={(e) => setCustomFields(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Comma-separated list of fields to query. Leave empty for default fields.
+                    </p>
+                  </div>
+                </div>
+                <Button onClick={() => fetchCustomers()} disabled={!customObject}>
+                  <Search className="h-4 w-4 mr-2" />
+                  Query Custom Object
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Empty State */}
         <Card>
           <CardContent className="p-12 text-center">
@@ -291,32 +480,37 @@ export default function CustomersPage() {
               Your Salesforce connection is working, but no customer records were found with the expected fields.
             </p>
 
-            <div className="bg-blue-50 p-4 rounded-lg mb-6 max-w-md mx-auto">
-              <h4 className="font-medium text-blue-800 mb-2">Expected Fields:</h4>
-              <ul className="text-sm text-blue-700 text-left space-y-1">
-                <li>
-                  • <code>Name</code>
-                </li>
-                <li>
-                  • <code>Customer_Email__c</code>
-                </li>
-                <li>
-                  • <code>Phone_Number__c</code>
-                </li>
-                <li>
-                  • <code>Quote_Date__c</code>
-                </li>
-                <li>
-                  • <code>reason__c</code>
-                </li>
-                <li>
-                  • <code>Total_amount__c</code>
-                </li>
+            {salesforceInfo && salesforceInfo.queryResults && (
+              <div className="bg-blue-50 p-4 rounded-lg mb-6 max-w-md mx-auto text-left">
+                <h4 className="font-medium text-blue-800 mb-2">Objects Checked:</h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  {salesforceInfo.queryResults.map((result: any) => (
+                    <li key={result.object}>
+                      • {result.object}: {result.recordCount} records found
+                      {result.recordCount === 0 && result.custom && (
+                        <span className="text-red-600 ml-1">(Does this object exist?)</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="bg-amber-50 p-4 rounded-lg mb-6 max-w-md mx-auto text-left">
+              <h4 className="font-medium text-amber-800 mb-2 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Possible Solutions:
+              </h4>
+              <ul className="text-sm text-amber-700 space-y-1">
+                <li>• Create some test customer records in Salesforce</li>
+                <li>• Check if your user has permission to view these objects</li>
+                <li>• Try querying a different object that contains customer data</li>
+                <li>• Use the Custom Query option to specify your customer object</li>
               </ul>
             </div>
 
             <div className="flex gap-2 justify-center">
-              <Button onClick={refetch}>
+              <Button onClick={() => fetchCustomers()}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh Data
               </Button>
@@ -345,7 +539,7 @@ export default function CustomersPage() {
           <p className="text-muted-foreground">Manage your electrical trade customers from Salesforce</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={refetch} variant="outline" size="sm" disabled={loading}>
+          <Button onClick={() => fetchCustomers()} variant="outline" size="sm" disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -491,7 +685,7 @@ export default function CustomersPage() {
                       ? "No customers match your search criteria."
                       : `No ${range === "all" ? "" : range + " value"} customers found in Salesforce.`}
                   </p>
-                  <Button onClick={refetch} variant="outline">
+                  <Button onClick={() => fetchCustomers()} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh Data
                   </Button>
